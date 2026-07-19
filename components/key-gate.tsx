@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -13,6 +14,10 @@ import { AuthAtmosphere } from "@/components/auth-atmosphere";
 import { Logo } from "@/components/logo";
 import { hasPrivateKey, savePrivateKey } from "@/lib/keystore";
 import { createClient } from "@/lib/supabase/client";
+
+const GATE_SAFETY_MS = 6000;
+const CHECK_NOTICE =
+  "Couldn't check for your encryption key on this device";
 
 type KeyGateContextValue = {
   hasKey: boolean;
@@ -37,23 +42,48 @@ export function KeyGate({ children }: { children: ReactNode }) {
   const [importing, setImporting] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  const [checkNotice, setCheckNotice] = useState<string | null>(null);
+  const settledRef = useRef(false);
 
-  const checkKey = useCallback(async () => {
-    try {
-      const ok = await hasPrivateKey();
+  const settle = useCallback(
+    (ok: boolean, notice: string | null = null) => {
+      if (settledRef.current) return;
+      settledRef.current = true;
       setHasKey(ok);
-    } catch {
-      setHasKey(false);
-    } finally {
+      if (notice) setCheckNotice(notice);
       setReady(true);
-    }
-  }, []);
+    },
+    [],
+  );
 
   useEffect(() => {
-    void checkKey();
-  }, [checkKey]);
+    let cancelled = false;
+
+    const safety = setTimeout(() => {
+      if (cancelled || settledRef.current) return;
+      console.warn(
+        "[key-gate] key detection exceeded 6s; showing import screen",
+      );
+      settle(false, CHECK_NOTICE);
+    }, GATE_SAFETY_MS);
+
+    void (async () => {
+      try {
+        const ok = await hasPrivateKey();
+        if (!cancelled) settle(ok);
+      } catch {
+        if (!cancelled) settle(false, CHECK_NOTICE);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(safety);
+    };
+  }, [settle]);
 
   const requireKeyImport = useCallback(() => {
+    settledRef.current = true;
     setFlash("Your encryption key isn't on this device");
     setHasKey(false);
     setReady(true);
@@ -78,6 +108,7 @@ export function KeyGate({ children }: { children: ReactNode }) {
       }
       setHasKey(true);
       setFlash(null);
+      setCheckNotice(null);
     } catch {
       setError("Could not import that key file.");
       setHasKey(false);
@@ -126,6 +157,14 @@ export function KeyGate({ children }: { children: ReactNode }) {
             <p className="mt-6 text-[20px] font-semibold leading-[1.4] text-[#FAFAF9]">
               Your encryption key isn&apos;t on this device
             </p>
+            {checkNotice ? (
+              <p
+                className="mt-2 text-[13px] leading-[1.4] text-amber-400/90"
+                role="status"
+              >
+                {checkNotice}
+              </p>
+            ) : null}
             <p className="mt-2 text-[13px] leading-[1.4] text-[#6E6963]">
               Signed in on a new device? Import the key backup you downloaded, or
               log out and create a new account.
