@@ -1,49 +1,64 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { GearIcon } from "@/components/icons";
+import { Avatar, DEFAULT_AVATAR_ID } from "@/lib/avatars";
 import { createClient } from "@/lib/supabase/client";
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const router = useRouter();
-  const [loggingOut, setLoggingOut] = useState(false);
+  const [avatarId, setAvatarId] = useState<string>(DEFAULT_AVATAR_ID);
 
-  async function logout() {
-    setLoggingOut(true);
-    try {
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
       const supabase = createClient();
-      await supabase.auth.signOut();
-      router.replace("/login");
-      router.refresh();
-    } catch {
-      setLoggingOut(false);
-    }
-  }
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user || cancelled) return;
+
+      const { data } = await supabase
+        .from("profiles")
+        .select("avatar_id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (!cancelled && data?.avatar_id) {
+        setAvatarId(data.avatar_id as string);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      <header className="border-b border-neutral-300 bg-white">
-        <div className="mx-auto flex h-14 w-full max-w-3xl items-center justify-between gap-4 px-4">
-          <Link href="/chats" className="text-lg font-semibold text-[#EA580C]">
-            Cipher
+      <header className="safe-pt border-b border-[#E7E5E4] bg-white/95 backdrop-blur-sm">
+        <div className="mx-auto flex h-14 w-full max-w-lg items-center justify-between px-4">
+          <Link
+            href="/chats"
+            className="text-[17px] font-semibold tracking-tight text-[#EA580C] transition-opacity duration-150 hover:opacity-80"
+          >
+            Celesth
           </Link>
-          <nav className="flex items-center gap-4 text-sm">
-            <Link href="/chats" className="text-neutral-800 hover:text-[#EA580C]">
-              Chats
-            </Link>
-            <Link href="/settings" className="text-neutral-800 hover:text-[#EA580C]">
-              Settings
-            </Link>
-            <button
-              type="button"
-              onClick={logout}
-              disabled={loggingOut}
-              className="text-neutral-800 hover:text-[#EA580C] disabled:opacity-40"
+          <div className="flex items-center gap-1">
+            <Link
+              href="/settings"
+              aria-label="Settings"
+              className="flex h-11 w-11 items-center justify-center rounded-full text-[#57534E] transition-colors duration-150 hover:bg-[#F5F5F4] hover:text-[#1C1917]"
             >
-              {loggingOut ? "…" : "Log out"}
-            </button>
-          </nav>
+              <GearIcon className="h-5 w-5" />
+            </Link>
+            <Link
+              href="/settings"
+              aria-label="Your profile"
+              className="flex h-11 w-11 items-center justify-center rounded-full transition-opacity duration-150 hover:opacity-90"
+            >
+              <Avatar avatarId={avatarId} size={32} />
+            </Link>
+          </div>
         </div>
       </header>
       <main className="flex min-h-0 flex-1 flex-col">{children}</main>

@@ -8,7 +8,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Cipher",
+  title: "Celesth",
   description: "End-to-end encrypted chat",
 };
 
@@ -19,7 +19,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${inter.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col font-sans">{children}</body>
+      <body className="flex min-h-full flex-col bg-[#FAFAF9] font-sans text-[#1C1917]">
+        {children}
+      </body>
     </html>
   );
 }

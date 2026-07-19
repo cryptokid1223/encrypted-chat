@@ -1,21 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { orderedParticipants } from "@/lib/chat";
+import { NewChatModal } from "@/components/new-chat-modal";
+import { LockIcon, PencilIcon } from "@/components/icons";
+import { Avatar, AVATARS } from "@/lib/avatars";
 import { createClient } from "@/lib/supabase/client";
 
 type ConversationRow = {
   id: string;
   otherUsername: string;
+  otherAvatarId: string | null;
 };
 
 export function ChatList() {
-  const router = useRouter();
-  const [username, setUsername] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
   const [loadingList, setLoadingList] = useState(true);
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [listError, setListError] = useState<string | null>(null);
@@ -55,7 +54,7 @@ export function ChatList() {
 
       const { data: profiles, error: profileError } = await supabase
         .from("profiles")
-        .select("id, username")
+        .select("id, username, avatar_id")
         .in("id", otherIds);
 
       if (profileError) {
@@ -63,8 +62,14 @@ export function ChatList() {
         return;
       }
 
-      const nameById = new Map(
-        (profiles ?? []).map((p) => [p.id as string, p.username as string]),
+      const profileById = new Map(
+        (profiles ?? []).map((p) => [
+          p.id as string,
+          {
+            username: p.username as string,
+            avatar_id: (p.avatar_id as string | null) ?? null,
+          },
+        ]),
       );
 
       setConversations(
@@ -73,9 +78,11 @@ export function ChatList() {
             row.participant_a === user.id
               ? row.participant_b
               : row.participant_a;
+          const profile = profileById.get(otherId as string);
           return {
             id: row.id as string,
-            otherUsername: nameById.get(otherId as string) ?? "Unknown",
+            otherUsername: profile?.username ?? "Unknown",
+            otherAvatarId: profile?.avatar_id ?? null,
           };
         }),
       );
@@ -90,165 +97,82 @@ export function ChatList() {
     void loadConversations();
   }, [loadConversations]);
 
-  async function startChat(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-
-    const cleaned = username.trim().toLowerCase();
-    if (!cleaned) {
-      setError("Enter a username.");
-      return;
-    }
-
-    setBusy(true);
-    try {
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        setError("Not signed in.");
-        return;
-      }
-
-      const { data: profile, error: lookupError } = await supabase
-        .from("profiles")
-        .select("id, username")
-        .eq("username", cleaned)
-        .maybeSingle();
-
-      if (lookupError) {
-        setError("Could not look up that user. Try again.");
-        return;
-      }
-
-      if (!profile) {
-        setError("No user with that username.");
-        return;
-      }
-
-      if (profile.id === user.id) {
-        setError("You can't start a chat with yourself.");
-        return;
-      }
-
-      const [participant_a, participant_b] = orderedParticipants(
-        user.id,
-        profile.id as string,
-      );
-
-      const { data: existing, error: findError } = await supabase
-        .from("conversations")
-        .select("id")
-        .eq("participant_a", participant_a)
-        .eq("participant_b", participant_b)
-        .maybeSingle();
-
-      if (findError) {
-        setError("Could not open conversation. Try again.");
-        return;
-      }
-
-      if (existing) {
-        router.push(`/chats/${existing.id}`);
-        return;
-      }
-
-      const { data: created, error: createError } = await supabase
-        .from("conversations")
-        .insert({ participant_a, participant_b })
-        .select("id")
-        .single();
-
-      if (createError) {
-        // Race: another request may have created it.
-        const { data: raced } = await supabase
-          .from("conversations")
-          .select("id")
-          .eq("participant_a", participant_a)
-          .eq("participant_b", participant_b)
-          .maybeSingle();
-
-        if (raced) {
-          router.push(`/chats/${raced.id}`);
-          return;
-        }
-
-        setError("Could not create conversation. Try again.");
-        return;
-      }
-
-      router.push(`/chats/${created.id}`);
-    } catch {
-      setError("Something went wrong. Try again.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
-    <div className="mx-auto w-full max-w-3xl flex-1 space-y-8 p-4 sm:p-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-neutral-900">Chats</h1>
-        <p className="mt-1 text-sm text-neutral-600">
-          Start a conversation by exact username
-        </p>
+    <div className="relative mx-auto flex w-full max-w-lg flex-1 flex-col">
+      <div className="px-4 pb-2 pt-5">
+        <h1 className="text-2xl font-semibold tracking-tight text-[#1C1917]">
+          Chats
+        </h1>
       </div>
 
-      <form onSubmit={startChat} className="border border-neutral-300 bg-white p-4">
-        <label htmlFor="new-chat-user" className="mb-1.5 block text-sm font-medium text-neutral-800">
-          New chat
-        </label>
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <input
-            id="new-chat-user"
-            value={username}
-            onChange={(e) => setUsername(e.target.value.toLowerCase())}
-            placeholder="username"
-            autoComplete="off"
-            className="w-full border border-neutral-300 bg-white px-3 py-2 text-neutral-900 outline-none focus:border-[#EA580C]"
-          />
+      {loadingList ? (
+        <p className="px-4 py-8 text-sm text-[#78716C]">Loading…</p>
+      ) : listError ? (
+        <p className="px-4 py-8 text-sm text-red-700" role="alert">
+          {listError}
+        </p>
+      ) : conversations.length === 0 ? (
+        <div className="flex flex-1 flex-col items-center justify-center px-6 pb-24 pt-8 text-center">
+          <div className="mb-6 flex -space-x-3">
+            {AVATARS.slice(0, 4).map((a) => (
+              <Avatar
+                key={a.id}
+                avatarId={a.id}
+                size={48}
+                className="ring-2 ring-[#FAFAF9]"
+              />
+            ))}
+          </div>
+          <h2 className="text-lg font-semibold text-[#1C1917]">
+            No chats yet
+          </h2>
+          <p className="mt-2 max-w-xs text-sm leading-relaxed text-[#78716C]">
+            Start a private conversation with someone by their Celesth username.
+          </p>
           <button
-            type="submit"
-            disabled={busy}
-            className="shrink-0 border border-[#EA580C] bg-[#EA580C] px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+            type="button"
+            onClick={() => setComposeOpen(true)}
+            className="mt-6 flex h-12 min-w-[160px] items-center justify-center rounded-2xl bg-[#EA580C] px-6 text-sm font-medium text-white transition-opacity duration-150 hover:opacity-90"
           >
-            {busy ? "Opening…" : "Start"}
+            Start a chat
           </button>
         </div>
-        {error ? (
-          <p className="mt-2 text-sm text-red-700" role="alert">
-            {error}
-          </p>
-        ) : null}
-      </form>
+      ) : (
+        <ul className="flex-1 pb-24">
+          {conversations.map((c) => (
+            <li key={c.id}>
+              <Link
+                href={`/chats/${c.id}`}
+                className="flex min-h-[72px] items-center gap-3 px-4 py-3 transition-colors duration-150 hover:bg-[#F5F5F4] active:bg-[#F5F5F4]"
+              >
+                <Avatar avatarId={c.otherAvatarId} size={44} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[15px] font-medium text-[#1C1917]">
+                    {c.otherUsername}
+                  </p>
+                  <p className="mt-0.5 flex items-center gap-1 text-[13px] text-[#A8A29E]">
+                    <LockIcon className="h-3 w-3 shrink-0" />
+                    <span className="truncate">Encrypted message</span>
+                  </p>
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
 
-      <section>
-        <h2 className="mb-3 text-sm font-medium text-neutral-800">Your conversations</h2>
-        {loadingList ? (
-          <p className="text-sm text-neutral-600">Loading…</p>
-        ) : listError ? (
-          <p className="text-sm text-red-700" role="alert">
-            {listError}
-          </p>
-        ) : conversations.length === 0 ? (
-          <p className="text-sm text-neutral-600">No conversations yet.</p>
-        ) : (
-          <ul className="divide-y divide-neutral-200 border border-neutral-300 bg-white">
-            {conversations.map((c) => (
-              <li key={c.id}>
-                <Link
-                  href={`/chats/${c.id}`}
-                  className="block px-4 py-3 text-neutral-900 hover:bg-neutral-50"
-                >
-                  {c.otherUsername}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {!loadingList ? (
+        <button
+          type="button"
+          onClick={() => setComposeOpen(true)}
+          aria-label="New chat"
+          className="safe-pb absolute bottom-4 right-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#EA580C] text-white transition-opacity duration-150 hover:opacity-90 active:opacity-80"
+        >
+          <PencilIcon className="h-6 w-6" />
+        </button>
+      ) : null}
+
+      <NewChatModal open={composeOpen} onClose={() => setComposeOpen(false)} />
     </div>
   );
 }

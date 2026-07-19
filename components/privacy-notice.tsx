@@ -13,12 +13,12 @@ export function PrivacyNotice() {
   }
 
   return (
-    <div className="flex min-h-full flex-1 items-center justify-center px-4 py-10">
-      <div className="w-full max-w-lg border border-neutral-300 bg-white p-6 sm:p-8">
-        <h1 className="text-2xl font-semibold text-neutral-900">
+    <div className="safe-pb flex min-h-full flex-1 items-center justify-center px-4 py-10">
+      <div className="w-full max-w-lg rounded-2xl border border-[#E7E5E4] bg-white p-6 sm:p-8">
+        <h1 className="text-2xl font-semibold tracking-tight text-[#1C1917]">
           How your privacy works
         </h1>
-        <ul className="mt-5 list-disc space-y-3 pl-5 text-sm leading-relaxed text-neutral-800">
+        <ul className="mt-5 list-disc space-y-3 pl-5 text-sm leading-relaxed text-[#44403C]">
           <li>
             You signed up with only a username — we never collect your email,
             phone number, or name.
@@ -40,7 +40,7 @@ export function PrivacyNotice() {
         <button
           type="button"
           onClick={acknowledge}
-          className="mt-8 w-full border border-[#EA580C] bg-[#EA580C] px-4 py-2.5 text-sm font-medium text-white"
+          className="mt-8 flex h-12 w-full items-center justify-center rounded-2xl bg-[#EA580C] px-4 text-sm font-medium text-white transition-opacity duration-150 hover:opacity-90"
         >
           I understand
         </button>

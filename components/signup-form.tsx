@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { AvatarPicker } from "@/components/avatar-picker";
 import {
   passwordStrengthHint,
   usernameToAuthEmail,
   validateUsername,
 } from "@/lib/auth-email";
+import { DEFAULT_AVATAR_ID } from "@/lib/avatars";
 import { generateKeyPair } from "@/lib/crypto";
 import { savePrivateKey } from "@/lib/keystore";
 import { createClient } from "@/lib/supabase/client";
@@ -17,6 +19,7 @@ export function SignupForm() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [avatarId, setAvatarId] = useState(DEFAULT_AVATAR_ID);
   const [acknowledged, setAcknowledged] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -86,6 +89,7 @@ export function SignupForm() {
         id: signUpData.user.id,
         username,
         public_key: publicKey,
+        avatar_id: avatarId,
       });
 
       if (profileError) {
@@ -103,9 +107,12 @@ export function SignupForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
+    <form onSubmit={onSubmit} className="space-y-5">
       <div>
-        <label htmlFor="username" className="mb-1.5 block text-sm font-medium text-neutral-800">
+        <label
+          htmlFor="username"
+          className="mb-1.5 block text-sm font-medium text-[#44403C]"
+        >
           Username
         </label>
         <input
@@ -114,13 +121,16 @@ export function SignupForm() {
           autoComplete="username"
           value={username}
           onChange={(e) => setUsername(e.target.value.toLowerCase())}
-          className="w-full border border-neutral-300 bg-white px-3 py-2 text-neutral-900 outline-none focus:border-[#EA580C]"
+          className="h-12 w-full rounded-2xl border border-[#E7E5E4] bg-white px-4 text-[#1C1917] outline-none transition-[border-color] duration-150 focus:border-[#EA580C]"
           required
         />
       </div>
 
       <div>
-        <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-neutral-800">
+        <label
+          htmlFor="password"
+          className="mb-1.5 block text-sm font-medium text-[#44403C]"
+        >
           Password
         </label>
         <input
@@ -130,17 +140,20 @@ export function SignupForm() {
           autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full border border-neutral-300 bg-white px-3 py-2 text-neutral-900 outline-none focus:border-[#EA580C]"
+          className="h-12 w-full rounded-2xl border border-[#E7E5E4] bg-white px-4 text-[#1C1917] outline-none transition-[border-color] duration-150 focus:border-[#EA580C]"
           required
           minLength={10}
         />
         {strength ? (
-          <p className="mt-1.5 text-xs text-neutral-600">{strength}</p>
+          <p className="mt-1.5 text-xs text-[#78716C]">{strength}</p>
         ) : null}
       </div>
 
       <div>
-        <label htmlFor="confirm" className="mb-1.5 block text-sm font-medium text-neutral-800">
+        <label
+          htmlFor="confirm"
+          className="mb-1.5 block text-sm font-medium text-[#44403C]"
+        >
           Confirm password
         </label>
         <input
@@ -150,23 +163,30 @@ export function SignupForm() {
           autoComplete="new-password"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
-          className="w-full border border-neutral-300 bg-white px-3 py-2 text-neutral-900 outline-none focus:border-[#EA580C]"
+          className="h-12 w-full rounded-2xl border border-[#E7E5E4] bg-white px-4 text-[#1C1917] outline-none transition-[border-color] duration-150 focus:border-[#EA580C]"
           required
           minLength={10}
         />
       </div>
 
-      <div className="border border-[#EA580C] bg-[#FFF7ED] p-4">
-        <p className="text-sm font-medium leading-relaxed text-neutral-900">
+      <div>
+        <p className="mb-3 text-sm font-medium text-[#44403C]">
+          Choose your avatar
+        </p>
+        <AvatarPicker value={avatarId} onChange={setAvatarId} />
+      </div>
+
+      <div className="rounded-2xl border border-[#EA580C]/40 bg-[#FFF7ED] p-4">
+        <p className="text-sm font-medium leading-relaxed text-[#1C1917]">
           No email means no password reset. If you forget your password, this
           account cannot be recovered by anyone. Save it in a password manager.
         </p>
-        <label className="mt-3 flex items-start gap-2 text-sm text-neutral-800">
+        <label className="mt-3 flex min-h-11 items-start gap-3 text-sm text-[#44403C]">
           <input
             type="checkbox"
             checked={acknowledged}
             onChange={(e) => setAcknowledged(e.target.checked)}
-            className="mt-0.5 accent-[#EA580C]"
+            className="mt-1 h-4 w-4 accent-[#EA580C]"
           />
           <span>I understand — I will save my password myself.</span>
         </label>
@@ -181,14 +201,17 @@ export function SignupForm() {
       <button
         type="submit"
         disabled={!canSubmit}
-        className="w-full border border-[#EA580C] bg-[#EA580C] px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex h-12 w-full items-center justify-center rounded-2xl bg-[#EA580C] px-4 text-sm font-medium text-white transition-opacity duration-150 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
       >
         {busy ? "Creating account…" : "Create account"}
       </button>
 
-      <p className="text-center text-sm text-neutral-600">
+      <p className="text-center text-sm text-[#78716C]">
         Already have an account?{" "}
-        <Link href="/login" className="font-medium text-[#EA580C] hover:underline">
+        <Link
+          href="/login"
+          className="font-medium text-[#EA580C] transition-opacity duration-150 hover:opacity-80"
+        >
           Log in
         </Link>
       </p>

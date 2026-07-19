@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronLeftIcon, LockIcon, SendIcon } from "@/components/icons";
 import { formatMessageTime } from "@/lib/chat";
 import { decryptMessage, encryptMessage } from "@/lib/crypto";
+import { Avatar } from "@/lib/avatars";
 import { loadPrivateKey } from "@/lib/keystore";
 import { createClient } from "@/lib/supabase/client";
 
@@ -58,6 +60,7 @@ export function ChatRoom() {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
   const [otherUsername, setOtherUsername] = useState("");
+  const [otherAvatarId, setOtherAvatarId] = useState<string | null>(null);
   const [myUserId, setMyUserId] = useState<string | null>(null);
   const [theirPublicKey, setTheirPublicKey] = useState<string | null>(null);
   const [myPrivateKey, setMyPrivateKey] = useState<string | null>(null);
@@ -143,7 +146,7 @@ export function ChatRoom() {
 
         const { data: otherProfile, error: profileError } = await supabase
           .from("profiles")
-          .select("username, public_key")
+          .select("username, public_key, avatar_id")
           .eq("id", otherId)
           .single();
 
@@ -185,6 +188,7 @@ export function ChatRoom() {
         setTheirPublicKey(otherProfile.public_key);
         setMyPrivateKey(privateKey);
         setOtherUsername(otherProfile.username);
+        setOtherAvatarId((otherProfile.avatar_id as string | null) ?? null);
         setMessages(decrypted);
         setStatus("ready");
 
@@ -288,7 +292,7 @@ export function ChatRoom() {
 
   if (status === "loading") {
     return (
-      <div className="flex flex-1 items-center justify-center p-6 text-sm text-neutral-600">
+      <div className="flex flex-1 items-center justify-center p-6 text-sm text-[#78716C]">
         Loading chat…
       </div>
     );
@@ -296,11 +300,14 @@ export function ChatRoom() {
 
   if (status === "error") {
     return (
-      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-start gap-4 p-6">
+      <div className="mx-auto flex w-full max-w-lg flex-1 flex-col items-start gap-4 p-6">
         <p className="text-sm text-red-700" role="alert">
           {error}
         </p>
-        <Link href="/chats" className="text-sm font-medium text-[#EA580C] hover:underline">
+        <Link
+          href="/chats"
+          className="text-sm font-medium text-[#EA580C] transition-opacity duration-150 hover:opacity-80"
+        >
           Back to chats
         </Link>
       </div>
@@ -308,40 +315,82 @@ export function ChatRoom() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-3 border-b border-neutral-300 bg-white px-4 py-3">
-        <Link href="/chats" className="text-sm text-neutral-600 hover:text-[#EA580C]">
-          ←
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-lg flex-1 flex-col bg-[#FAFAF9]">
+      <div className="safe-pt flex items-center gap-2 border-b border-[#E7E5E4] bg-white px-2 py-2">
+        <Link
+          href="/chats"
+          aria-label="Back to chats"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[#57534E] transition-colors duration-150 hover:bg-[#F5F5F4]"
+        >
+          <ChevronLeftIcon className="h-5 w-5" />
         </Link>
-        <h1 className="text-base font-semibold text-neutral-900">{otherUsername}</h1>
+        <Avatar avatarId={otherAvatarId} size={36} />
+        <div className="min-w-0 flex-1 pr-2">
+          <h1 className="truncate text-[15px] font-semibold text-[#1C1917]">
+            {otherUsername}
+          </h1>
+          <p className="mt-0.5 flex items-center gap-1 text-[11px] text-[#A8A29E]">
+            <LockIcon className="h-3 w-3" />
+            End-to-end encrypted
+          </p>
+        </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-4">
         {messages.length === 0 ? (
-          <p className="text-center text-sm text-neutral-500">
-            No messages yet. Say hello.
-          </p>
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+            <Avatar avatarId={otherAvatarId} size={64} />
+            <p className="text-sm font-medium text-[#1C1917]">{otherUsername}</p>
+            <p className="max-w-[220px] text-[13px] leading-relaxed text-[#A8A29E]">
+              Messages are end-to-end encrypted. Only you two can read them.
+            </p>
+          </div>
         ) : (
-          <ul className="flex flex-col gap-3">
-            {messages.map((m) => {
+          <ul className="flex flex-col">
+            {messages.map((m, i) => {
               const mine = m.senderId === myUserId;
+              const prev = messages[i - 1];
+              const sameAsPrev = prev?.senderId === m.senderId;
+              const next = messages[i + 1];
+              const sameAsNext = next?.senderId === m.senderId;
+
               return (
                 <li
                   key={m.id}
-                  className={`flex flex-col ${mine ? "items-end" : "items-start"}`}
+                  className={`flex flex-col ${mine ? "items-end" : "items-start"} ${
+                    sameAsPrev ? "mt-0.5" : "mt-3"
+                  }`}
                 >
                   <div
                     className={
                       mine
-                        ? "max-w-[85%] bg-[#EA580C] px-3 py-2 text-sm text-white sm:max-w-[70%]"
-                        : "max-w-[85%] border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 sm:max-w-[70%]"
+                        ? `max-w-[75%] bg-[#EA580C] px-3.5 py-2 text-[15px] leading-relaxed text-white ${
+                            sameAsPrev && sameAsNext
+                              ? "rounded-2xl rounded-r-md"
+                              : sameAsPrev
+                                ? "rounded-2xl rounded-tr-md"
+                                : sameAsNext
+                                  ? "rounded-2xl rounded-br-md"
+                                  : "rounded-2xl rounded-br-sm"
+                          }`
+                        : `max-w-[75%] border border-[#E7E5E4] bg-white px-3.5 py-2 text-[15px] leading-relaxed text-[#1C1917] ${
+                            sameAsPrev && sameAsNext
+                              ? "rounded-2xl rounded-l-md"
+                              : sameAsPrev
+                                ? "rounded-2xl rounded-tl-md"
+                                : sameAsNext
+                                  ? "rounded-2xl rounded-bl-md"
+                                  : "rounded-2xl rounded-bl-sm"
+                          }`
                     }
                   >
                     {m.body}
                   </div>
-                  <span className="mt-1 text-xs text-neutral-500">
-                    {formatMessageTime(m.createdAt)}
-                  </span>
+                  {!sameAsNext ? (
+                    <span className="mt-1 px-1 text-[11px] text-[#A8A29E]">
+                      {formatMessageTime(m.createdAt)}
+                    </span>
+                  ) : null}
                 </li>
               );
             })}
@@ -352,26 +401,27 @@ export function ChatRoom() {
 
       <form
         onSubmit={sendMessage}
-        className="border-t border-neutral-300 bg-white p-3 sm:p-4"
+        className="safe-pb sticky bottom-0 border-t border-[#E7E5E4] bg-[#FAFAF9] px-3 pt-3"
       >
-        <div className="flex gap-2">
+        <div className="flex items-end gap-2">
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="Type a message"
+            placeholder="Message"
             autoComplete="off"
-            className="min-w-0 flex-1 border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-[#EA580C]"
+            className="min-h-11 min-w-0 flex-1 rounded-full border border-[#E7E5E4] bg-white px-4 py-2.5 text-[15px] text-[#1C1917] outline-none transition-[border-color] duration-150 focus:border-[#EA580C]"
           />
           <button
             type="submit"
             disabled={sending || !draft.trim()}
-            className="shrink-0 border border-[#EA580C] bg-[#EA580C] px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+            aria-label="Send"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#EA580C] text-white transition-opacity duration-150 hover:opacity-90 disabled:opacity-35"
           >
-            {sending ? "…" : "Send"}
+            <SendIcon className="h-5 w-5" />
           </button>
         </div>
         {sendError ? (
-          <p className="mt-2 text-sm text-red-700" role="alert">
+          <p className="mt-2 px-1 text-sm text-red-700" role="alert">
             {sendError}
           </p>
         ) : null}

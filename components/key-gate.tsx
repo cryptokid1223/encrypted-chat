@@ -43,7 +43,7 @@ export function KeyGate({ children }: { children: ReactNode }) {
 
   if (!ready) {
     return (
-      <div className="flex min-h-full flex-1 items-center justify-center p-6 text-sm text-neutral-600">
+      <div className="flex min-h-full flex-1 items-center justify-center p-6 text-sm text-[#78716C]">
         Loading…
       </div>
     );
@@ -51,16 +51,20 @@ export function KeyGate({ children }: { children: ReactNode }) {
 
   if (!hasKey) {
     return (
-      <div className="flex min-h-full flex-1 items-center justify-center p-6">
-        <div className="w-full max-w-md border border-neutral-300 bg-white p-6">
-          <h1 className="text-xl font-semibold text-neutral-900">
+      <div className="safe-pb flex min-h-full flex-1 items-center justify-center p-6">
+        <div className="w-full max-w-md rounded-2xl border border-[#E7E5E4] bg-white p-6">
+          <h1 className="text-xl font-semibold text-[#1C1917]">
             Your encryption key isn&apos;t on this device
           </h1>
-          <p className="mt-3 text-sm leading-relaxed text-neutral-700">
-            Import your key backup file to decrypt messages on this device.
+          <p className="mt-3 text-sm leading-relaxed text-[#78716C]">
+            Import your key backup file (
+            <span className="text-[#57534E]">celesth-key-backup.txt</span> or an
+            older{" "}
+            <span className="text-[#57534E]">mychat-key-backup.txt</span>) to
+            decrypt messages here.
           </p>
           <label className="mt-6 block">
-            <span className="mb-2 block text-sm font-medium text-neutral-800">
+            <span className="mb-2 block text-sm font-medium text-[#44403C]">
               Key backup file
             </span>
             <input
@@ -68,7 +72,7 @@ export function KeyGate({ children }: { children: ReactNode }) {
               accept=".txt,text/plain"
               disabled={importing}
               onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
-              className="block w-full text-sm text-neutral-800 file:mr-3 file:border file:border-neutral-300 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-neutral-900 hover:file:border-[#EA580C] hover:file:text-[#EA580C]"
+              className="block w-full text-sm text-[#44403C] file:mr-3 file:h-11 file:rounded-2xl file:border file:border-[#E7E5E4] file:bg-white file:px-4 file:text-sm file:font-medium file:text-[#1C1917] file:transition-colors file:duration-150 hover:file:border-[#EA580C] hover:file:text-[#EA580C]"
             />
           </label>
           {error ? (

@@ -2,8 +2,13 @@
 
 :root {
   --background: #fafaf9;
-  --foreground: #171717;
+  --foreground: #1c1917;
+  --ink: #1c1917;
+  --muted: #78716c;
+  --border: #e7e5e4;
   --accent: #ea580c;
+  --card: #ffffff;
+  --radius: 16px;
 }
 
 @theme inline {
@@ -12,8 +17,27 @@
   --font-sans: var(--font-inter);
 }
 
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-inter), system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Comfortable touch + safe area for Capacitor / iOS later */
+.safe-pb {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+.safe-pt {
+  padding-top: max(0px, env(safe-area-inset-top));
 }
