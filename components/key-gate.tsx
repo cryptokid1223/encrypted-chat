@@ -43,7 +43,7 @@ export function KeyGate({ children }: { children: ReactNode }) {
 
   if (!ready) {
     return (
-      <div className="flex min-h-full flex-1 items-center justify-center p-6 text-sm text-[#78716C]">
+      <div className="flex min-h-dvh flex-1 items-center justify-center bg-[#0C0A09] p-6 text-sm text-[#A8A29E]">
         Loading…
       </div>
     );
@@ -51,32 +51,44 @@ export function KeyGate({ children }: { children: ReactNode }) {
 
   if (!hasKey) {
     return (
-      <div className="safe-pb flex min-h-full flex-1 items-center justify-center p-6">
-        <div className="w-full max-w-md rounded-2xl border border-[#E7E5E4] bg-white p-6">
-          <h1 className="text-xl font-semibold text-[#1C1917]">
+      <div className="safe-pb safe-pt flex min-h-dvh flex-1 items-center justify-center bg-[#0C0A09] p-6">
+        <div className="w-full max-w-md rounded-2xl border border-[#292524] bg-[#1C1917] p-6 sm:p-8">
+          <p className="text-center text-lg font-semibold tracking-tight text-[#EA580C]">
+            Celesth
+          </p>
+          <h1 className="mt-6 text-xl font-semibold text-[#FAFAF9]">
             Your encryption key isn&apos;t on this device
           </h1>
-          <p className="mt-3 text-sm leading-relaxed text-[#78716C]">
-            Import your key backup file (
-            <span className="text-[#57534E]">celesth-key-backup.txt</span> or an
+          <p className="mt-3 text-sm leading-relaxed text-[#A8A29E]">
+            Import your key backup (
+            <span className="text-[#FAFAF9]">celesth-key-backup.txt</span> or an
             older{" "}
-            <span className="text-[#57534E]">mychat-key-backup.txt</span>) to
+            <span className="text-[#FAFAF9]">mychat-key-backup.txt</span>) to
             decrypt messages here.
           </p>
-          <label className="mt-6 block">
-            <span className="mb-2 block text-sm font-medium text-[#44403C]">
-              Key backup file
+
+          <label
+            className={`mt-6 flex min-h-[140px] cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-[#292524] bg-[#0C0A09] px-4 py-8 text-center transition-colors duration-150 hover:border-[#EA580C]/60 ${
+              importing ? "opacity-60" : ""
+            }`}
+          >
+            <span className="text-sm font-medium text-[#FAFAF9]">
+              {importing ? "Importing…" : "Choose key backup file"}
+            </span>
+            <span className="mt-1 text-xs text-[#78716C]">
+              Tap to browse · .txt files
             </span>
             <input
               type="file"
               accept=".txt,text/plain"
               disabled={importing}
               onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
-              className="block w-full text-sm text-[#44403C] file:mr-3 file:h-11 file:rounded-2xl file:border file:border-[#E7E5E4] file:bg-white file:px-4 file:text-sm file:font-medium file:text-[#1C1917] file:transition-colors file:duration-150 hover:file:border-[#EA580C] hover:file:text-[#EA580C]"
+              className="sr-only"
             />
           </label>
+
           {error ? (
-            <p className="mt-3 text-sm text-red-700" role="alert">
+            <p className="mt-3 text-sm text-red-400" role="alert">
               {error}
             </p>
           ) : null}

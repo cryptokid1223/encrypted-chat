@@ -1,13 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --background: #fafaf9;
-  --foreground: #1c1917;
-  --ink: #1c1917;
-  --muted: #78716c;
-  --border: #e7e5e4;
+  --background: #0c0a09;
+  --surface: #1c1917;
+  --elevated: #292524;
+  --border: #292524;
+  --foreground: #fafaf9;
+  --muted: #a8a29e;
+  --muted-dim: #78716c;
   --accent: #ea580c;
-  --card: #ffffff;
+  --accent-hover: #c2410c;
   --radius: 16px;
 }
 
@@ -33,7 +35,36 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Comfortable touch + safe area for Capacitor / iOS later */
+::selection {
+  background: rgba(234, 88, 12, 0.35);
+  color: #fafaf9;
+}
+
+/* Subtle dark scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #292524 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #292524;
+  border-radius: 999px;
+}
+
+*:focus-visible {
+  outline: 2px solid #ea580c;
+  outline-offset: 2px;
+}
+
 .safe-pb {
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }

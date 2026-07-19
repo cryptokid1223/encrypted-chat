@@ -143,22 +143,22 @@ export function NewChatModal({
       <button
         type="button"
         aria-label="Close"
-        className="absolute inset-0 bg-[#1C1917]/30 transition-opacity duration-150"
+        className="absolute inset-0 bg-black/60 transition-opacity duration-150"
         onClick={onClose}
       />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-chat-title"
-        className="safe-pb relative z-10 w-full max-w-lg rounded-t-2xl border border-[#E7E5E4] bg-white p-6 shadow-none sm:rounded-2xl"
+        className="safe-pb relative z-10 w-full max-w-lg rounded-t-2xl border border-[#292524] bg-[#1C1917] p-6 sm:rounded-2xl"
       >
         <h2
           id="new-chat-title"
-          className="text-lg font-semibold text-[#1C1917]"
+          className="text-lg font-semibold text-[#FAFAF9]"
         >
           New chat
         </h2>
-        <p className="mt-1 text-sm text-[#78716C]">
+        <p className="mt-1 text-sm text-[#A8A29E]">
           Enter their exact Celesth username
         </p>
 
@@ -172,10 +172,10 @@ export function NewChatModal({
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
-            className="h-12 w-full rounded-2xl border border-[#E7E5E4] bg-[#FAFAF9] px-4 text-[15px] text-[#1C1917] outline-none transition-[border-color,box-shadow] duration-150 focus:border-[#EA580C]"
+            className="h-12 w-full rounded-2xl border border-[#292524] bg-[#0C0A09] px-4 text-[15px] text-[#FAFAF9] placeholder:text-[#78716C] outline-none transition-[border-color] duration-150 focus:border-[#EA580C]"
           />
           {error ? (
-            <p className="text-sm text-red-700" role="alert">
+            <p className="text-sm text-red-400" role="alert">
               {error}
             </p>
           ) : null}
@@ -183,14 +183,14 @@ export function NewChatModal({
             <button
               type="button"
               onClick={onClose}
-              className="h-12 flex-1 rounded-2xl px-4 text-sm font-medium text-[#57534E] transition-colors duration-150 hover:bg-[#F5F5F4]"
+              className="h-12 flex-1 rounded-2xl px-4 text-sm font-medium text-[#A8A29E] transition-colors duration-150 hover:bg-[#292524] hover:text-[#FAFAF9]"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={busy || !username.trim()}
-              className="h-12 flex-1 rounded-2xl bg-[#EA580C] px-4 text-sm font-medium text-white transition-opacity duration-150 hover:opacity-90 disabled:opacity-40"
+              className="h-12 flex-1 rounded-2xl bg-[#EA580C] px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-[#C2410C] disabled:opacity-40"
             >
               {busy ? "Opening…" : "Chat"}
             </button>

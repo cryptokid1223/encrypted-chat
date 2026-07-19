@@ -26,12 +26,12 @@ export function AvatarPicker({
             onClick={() => onChange(avatar.id)}
             className={`flex min-h-11 flex-col items-center gap-1.5 rounded-2xl p-2 transition-colors duration-150 ${
               selected
-                ? "bg-[#FFF7ED] ring-2 ring-[#EA580C] ring-offset-2 ring-offset-[#FAFAF9]"
-                : "hover:bg-[#F5F5F4]"
+                ? "bg-[#292524] ring-2 ring-[#EA580C] ring-offset-2 ring-offset-[#1C1917]"
+                : "hover:bg-[#292524]/70"
             }`}
           >
             <Avatar avatarId={avatar.id} size={48} />
-            <span className="text-[11px] font-medium capitalize text-[#57534E]">
+            <span className="text-[11px] font-medium capitalize text-[#A8A29E]">
               {avatar.name}
             </span>
           </button>

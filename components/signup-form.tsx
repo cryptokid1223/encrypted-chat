@@ -111,7 +111,7 @@ export function SignupForm() {
       <div>
         <label
           htmlFor="username"
-          className="mb-1.5 block text-sm font-medium text-[#44403C]"
+          className="mb-1.5 block text-sm font-medium text-[#A8A29E]"
         >
           Username
         </label>
@@ -121,7 +121,7 @@ export function SignupForm() {
           autoComplete="username"
           value={username}
           onChange={(e) => setUsername(e.target.value.toLowerCase())}
-          className="h-12 w-full rounded-2xl border border-[#E7E5E4] bg-white px-4 text-[#1C1917] outline-none transition-[border-color] duration-150 focus:border-[#EA580C]"
+          className="h-12 w-full rounded-2xl border border-[#292524] bg-[#0C0A09] px-4 text-[#FAFAF9] outline-none transition-[border-color] duration-150 focus:border-[#EA580C]"
           required
         />
       </div>
@@ -129,7 +129,7 @@ export function SignupForm() {
       <div>
         <label
           htmlFor="password"
-          className="mb-1.5 block text-sm font-medium text-[#44403C]"
+          className="mb-1.5 block text-sm font-medium text-[#A8A29E]"
         >
           Password
         </label>
@@ -140,7 +140,7 @@ export function SignupForm() {
           autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="h-12 w-full rounded-2xl border border-[#E7E5E4] bg-white px-4 text-[#1C1917] outline-none transition-[border-color] duration-150 focus:border-[#EA580C]"
+          className="h-12 w-full rounded-2xl border border-[#292524] bg-[#0C0A09] px-4 text-[#FAFAF9] outline-none transition-[border-color] duration-150 focus:border-[#EA580C]"
           required
           minLength={10}
         />
@@ -152,7 +152,7 @@ export function SignupForm() {
       <div>
         <label
           htmlFor="confirm"
-          className="mb-1.5 block text-sm font-medium text-[#44403C]"
+          className="mb-1.5 block text-sm font-medium text-[#A8A29E]"
         >
           Confirm password
         </label>
@@ -163,25 +163,25 @@ export function SignupForm() {
           autoComplete="new-password"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
-          className="h-12 w-full rounded-2xl border border-[#E7E5E4] bg-white px-4 text-[#1C1917] outline-none transition-[border-color] duration-150 focus:border-[#EA580C]"
+          className="h-12 w-full rounded-2xl border border-[#292524] bg-[#0C0A09] px-4 text-[#FAFAF9] outline-none transition-[border-color] duration-150 focus:border-[#EA580C]"
           required
           minLength={10}
         />
       </div>
 
       <div>
-        <p className="mb-3 text-sm font-medium text-[#44403C]">
+        <p className="mb-3 text-sm font-medium text-[#A8A29E]">
           Choose your avatar
         </p>
         <AvatarPicker value={avatarId} onChange={setAvatarId} />
       </div>
 
-      <div className="rounded-2xl border border-[#EA580C]/40 bg-[#FFF7ED] p-4">
-        <p className="text-sm font-medium leading-relaxed text-[#1C1917]">
+      <div className="rounded-2xl border border-[#78350F]/40 bg-[#451A03] p-4">
+        <p className="text-sm font-medium leading-relaxed text-[#FBBF24]/90">
           No email means no password reset. If you forget your password, this
           account cannot be recovered by anyone. Save it in a password manager.
         </p>
-        <label className="mt-3 flex min-h-11 items-start gap-3 text-sm text-[#44403C]">
+        <label className="mt-3 flex min-h-11 items-start gap-3 text-sm text-[#FBBF24]/80">
           <input
             type="checkbox"
             checked={acknowledged}
@@ -193,7 +193,7 @@ export function SignupForm() {
       </div>
 
       {error ? (
-        <p className="text-sm text-red-700" role="alert">
+        <p className="text-sm text-red-400" role="alert">
           {error}
         </p>
       ) : null}
@@ -201,16 +201,16 @@ export function SignupForm() {
       <button
         type="submit"
         disabled={!canSubmit}
-        className="flex h-12 w-full items-center justify-center rounded-2xl bg-[#EA580C] px-4 text-sm font-medium text-white transition-opacity duration-150 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex h-12 w-full items-center justify-center rounded-2xl bg-[#EA580C] px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-[#C2410C] disabled:cursor-not-allowed disabled:opacity-40"
       >
         {busy ? "Creating account…" : "Create account"}
       </button>
 
-      <p className="text-center text-sm text-[#78716C]">
+      <p className="text-center text-sm text-[#A8A29E]">
         Already have an account?{" "}
         <Link
           href="/login"
-          className="font-medium text-[#EA580C] transition-opacity duration-150 hover:opacity-80"
+          className="font-medium text-[#EA580C] transition-colors duration-150 hover:text-[#C2410C]"
         >
           Log in
         </Link>

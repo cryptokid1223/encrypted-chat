@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AvatarPicker } from "@/components/avatar-picker";
@@ -108,65 +109,75 @@ export function SettingsPanel() {
   }
 
   return (
-    <div className="safe-pb mx-auto w-full max-w-lg space-y-6 p-4 sm:p-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-[#1C1917]">
-          Settings
-        </h1>
-        <p className="mt-1 text-sm text-[#78716C]">Profile and encryption key</p>
+    <div className="safe-pb safe-pt flex h-full min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="mx-auto w-full max-w-lg space-y-6 p-4 sm:p-6">
+        <div>
+          <Link
+            href="/chats"
+            className="mb-3 inline-flex text-sm font-medium text-[#A8A29E] transition-colors duration-150 hover:text-[#FAFAF9] md:hidden"
+          >
+            ← Chats
+          </Link>
+          <h1 className="text-2xl font-semibold tracking-tight text-[#FAFAF9]">
+            Settings
+          </h1>
+          <p className="mt-1 text-sm text-[#A8A29E]">
+            Profile and encryption key
+          </p>
+        </div>
+
+        <section className="rounded-2xl border border-[#292524] bg-[#1C1917] p-5">
+          <h2 className="text-base font-semibold text-[#FAFAF9]">Avatar</h2>
+          <p className="mt-1 text-sm text-[#A8A29E]">
+            Shown next to your username in chats
+          </p>
+          <div className="mt-4">
+            <AvatarPicker value={avatarId} onChange={updateAvatar} />
+          </div>
+          {avatarSaving ? (
+            <p className="mt-3 text-sm text-[#A8A29E]">Saving…</p>
+          ) : avatarMessage ? (
+            <p className="mt-3 text-sm text-[#A8A29E]">{avatarMessage}</p>
+          ) : null}
+        </section>
+
+        <section className="rounded-2xl border border-[#292524] bg-[#1C1917] p-5">
+          <h2 className="text-base font-semibold text-[#FAFAF9]">Key backup</h2>
+          <div className="mt-3 rounded-2xl border border-[#78350F]/50 bg-[#451A03] p-3">
+            <p className="text-sm leading-relaxed text-[#FBBF24]/90">
+              Anyone with this file can read your messages. If you lose this
+              file and lose this device, your messages are gone forever.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={downloadBackup}
+            className="mt-4 flex h-12 w-full items-center justify-center rounded-2xl bg-[#EA580C] px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-[#C2410C] sm:w-auto"
+          >
+            Download key backup
+          </button>
+          {message ? (
+            <p className="mt-3 text-sm text-[#A8A29E]">{message}</p>
+          ) : null}
+          {error ? (
+            <p className="mt-3 text-sm text-red-400" role="alert">
+              {error}
+            </p>
+          ) : null}
+        </section>
+
+        <section className="rounded-2xl border border-[#292524] bg-[#1C1917] p-5">
+          <h2 className="text-base font-semibold text-[#FAFAF9]">Session</h2>
+          <button
+            type="button"
+            onClick={logout}
+            disabled={busy}
+            className="mt-4 flex h-12 w-full items-center justify-center rounded-2xl px-4 text-sm font-medium text-[#A8A29E] transition-colors duration-150 hover:bg-[#292524] hover:text-[#FAFAF9] disabled:opacity-40 sm:w-auto"
+          >
+            {busy ? "Logging out…" : "Log out"}
+          </button>
+        </section>
       </div>
-
-      <section className="rounded-2xl border border-[#E7E5E4] bg-white p-5">
-        <h2 className="text-base font-semibold text-[#1C1917]">Avatar</h2>
-        <p className="mt-1 text-sm text-[#78716C]">
-          Shown next to your username in chats
-        </p>
-        <div className="mt-4">
-          <AvatarPicker value={avatarId} onChange={updateAvatar} />
-        </div>
-        {avatarSaving ? (
-          <p className="mt-3 text-sm text-[#78716C]">Saving…</p>
-        ) : avatarMessage ? (
-          <p className="mt-3 text-sm text-[#78716C]">{avatarMessage}</p>
-        ) : null}
-      </section>
-
-      <section className="rounded-2xl border border-[#E7E5E4] bg-white p-5">
-        <h2 className="text-base font-semibold text-[#1C1917]">Key backup</h2>
-        <div className="mt-3 rounded-2xl border border-[#EA580C]/40 bg-[#FFF7ED] p-3">
-          <p className="text-sm leading-relaxed text-[#1C1917]">
-            Anyone with this file can read your messages. If you lose this file
-            and lose this device, your messages are gone forever.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={downloadBackup}
-          className="mt-4 flex h-12 w-full items-center justify-center rounded-2xl bg-[#EA580C] px-4 text-sm font-medium text-white transition-opacity duration-150 hover:opacity-90 sm:w-auto"
-        >
-          Download key backup
-        </button>
-        {message ? (
-          <p className="mt-3 text-sm text-[#57534E]">{message}</p>
-        ) : null}
-        {error ? (
-          <p className="mt-3 text-sm text-red-700" role="alert">
-            {error}
-          </p>
-        ) : null}
-      </section>
-
-      <section className="rounded-2xl border border-[#E7E5E4] bg-white p-5">
-        <h2 className="text-base font-semibold text-[#1C1917]">Session</h2>
-        <button
-          type="button"
-          onClick={logout}
-          disabled={busy}
-          className="mt-4 flex h-12 w-full items-center justify-center rounded-2xl px-4 text-sm font-medium text-[#57534E] transition-colors duration-150 hover:bg-[#F5F5F4] disabled:opacity-40 sm:w-auto"
-        >
-          {busy ? "Logging out…" : "Log out"}
-        </button>
-      </section>
     </div>
   );
 }

@@ -292,7 +292,7 @@ export function ChatRoom() {
 
   if (status === "loading") {
     return (
-      <div className="flex flex-1 items-center justify-center p-6 text-sm text-[#78716C]">
+      <div className="flex flex-1 items-center justify-center p-6 text-sm text-[#A8A29E]">
         Loading chat…
       </div>
     );
@@ -300,13 +300,13 @@ export function ChatRoom() {
 
   if (status === "error") {
     return (
-      <div className="mx-auto flex w-full max-w-lg flex-1 flex-col items-start gap-4 p-6">
-        <p className="text-sm text-red-700" role="alert">
+      <div className="flex flex-1 flex-col items-start gap-4 p-6">
+        <p className="text-sm text-red-400" role="alert">
           {error}
         </p>
         <Link
           href="/chats"
-          className="text-sm font-medium text-[#EA580C] transition-opacity duration-150 hover:opacity-80"
+          className="text-sm font-medium text-[#EA580C] transition-colors duration-150 hover:text-[#C2410C]"
         >
           Back to chats
         </Link>
@@ -315,18 +315,18 @@ export function ChatRoom() {
   }
 
   return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-lg flex-1 flex-col bg-[#FAFAF9]">
-      <div className="safe-pt flex items-center gap-2 border-b border-[#E7E5E4] bg-white px-2 py-2">
+    <div className="flex h-full min-h-0 w-full flex-1 flex-col bg-[#0C0A09]">
+      <div className="safe-pt flex items-center gap-2 border-b border-[#292524] bg-[#1C1917] px-2 py-2">
         <Link
           href="/chats"
           aria-label="Back to chats"
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[#57534E] transition-colors duration-150 hover:bg-[#F5F5F4]"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[#A8A29E] transition-colors duration-150 hover:bg-[#292524] hover:text-[#FAFAF9] md:hidden"
         >
           <ChevronLeftIcon className="h-5 w-5" />
         </Link>
         <Avatar avatarId={otherAvatarId} size={36} />
-        <div className="min-w-0 flex-1 pr-2">
-          <h1 className="truncate text-[15px] font-semibold text-[#1C1917]">
+        <div className="min-w-0 flex-1 pr-3">
+          <h1 className="truncate text-[15px] font-semibold text-[#FAFAF9]">
             {otherUsername}
           </h1>
           <p className="mt-0.5 flex items-center gap-1 text-[11px] text-[#A8A29E]">
@@ -336,12 +336,12 @@ export function ChatRoom() {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-4">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
         {messages.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
             <Avatar avatarId={otherAvatarId} size={64} />
-            <p className="text-sm font-medium text-[#1C1917]">{otherUsername}</p>
-            <p className="max-w-[220px] text-[13px] leading-relaxed text-[#A8A29E]">
+            <p className="text-sm font-medium text-[#FAFAF9]">{otherUsername}</p>
+            <p className="max-w-[240px] text-[13px] leading-relaxed text-[#A8A29E]">
               Messages are end-to-end encrypted. Only you two can read them.
             </p>
           </div>
@@ -373,7 +373,7 @@ export function ChatRoom() {
                                   ? "rounded-2xl rounded-br-md"
                                   : "rounded-2xl rounded-br-sm"
                           }`
-                        : `max-w-[75%] border border-[#E7E5E4] bg-white px-3.5 py-2 text-[15px] leading-relaxed text-[#1C1917] ${
+                        : `max-w-[75%] bg-[#292524] px-3.5 py-2 text-[15px] leading-relaxed text-[#FAFAF9] ${
                             sameAsPrev && sameAsNext
                               ? "rounded-2xl rounded-l-md"
                               : sameAsPrev
@@ -387,7 +387,7 @@ export function ChatRoom() {
                     {m.body}
                   </div>
                   {!sameAsNext ? (
-                    <span className="mt-1 px-1 text-[11px] text-[#A8A29E]">
+                    <span className="mt-1 px-1 text-[11px] text-[#78716C]">
                       {formatMessageTime(m.createdAt)}
                     </span>
                   ) : null}
@@ -401,7 +401,7 @@ export function ChatRoom() {
 
       <form
         onSubmit={sendMessage}
-        className="safe-pb sticky bottom-0 border-t border-[#E7E5E4] bg-[#FAFAF9] px-3 pt-3"
+        className="safe-pb sticky bottom-0 border-t border-[#292524] bg-[#0C0A09] px-3 pt-3"
       >
         <div className="flex items-end gap-2">
           <input
@@ -409,19 +409,19 @@ export function ChatRoom() {
             onChange={(e) => setDraft(e.target.value)}
             placeholder="Message"
             autoComplete="off"
-            className="min-h-11 min-w-0 flex-1 rounded-full border border-[#E7E5E4] bg-white px-4 py-2.5 text-[15px] text-[#1C1917] outline-none transition-[border-color] duration-150 focus:border-[#EA580C]"
+            className="min-h-11 min-w-0 flex-1 rounded-full border border-[#292524] bg-[#1C1917] px-4 py-2.5 text-[15px] text-[#FAFAF9] placeholder:text-[#78716C] outline-none transition-[border-color] duration-150 focus:border-[#EA580C]"
           />
           <button
             type="submit"
             disabled={sending || !draft.trim()}
             aria-label="Send"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#EA580C] text-white transition-opacity duration-150 hover:opacity-90 disabled:opacity-35"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#EA580C] text-white transition-colors duration-150 hover:bg-[#C2410C] disabled:opacity-40"
           >
             <SendIcon className="h-5 w-5" />
           </button>
         </div>
         {sendError ? (
-          <p className="mt-2 px-1 text-sm text-red-700" role="alert">
+          <p className="mt-2 px-1 text-sm text-red-400" role="alert">
             {sendError}
           </p>
         ) : null}

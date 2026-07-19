@@ -250,7 +250,7 @@ export function Avatar({
 
   return (
     <span
-      className={`inline-flex shrink-0 overflow-hidden rounded-full ${className}`}
+      className={`inline-flex shrink-0 overflow-hidden rounded-full border border-[#292524] ${className}`}
       style={{ width: size, height: size, backgroundColor: avatar.bg }}
       title={title ?? avatar.name}
       role="img"
