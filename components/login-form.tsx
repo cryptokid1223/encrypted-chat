@@ -50,7 +50,7 @@ export function LoginForm() {
       <div>
         <label
           htmlFor="username"
-          className="mb-1.5 block text-sm font-medium text-[#A8A29E]"
+          className="mb-1.5 block text-[11px] font-medium tracking-wide text-[#A8A29E] uppercase"
         >
           Username
         </label>
@@ -68,7 +68,7 @@ export function LoginForm() {
       <div>
         <label
           htmlFor="password"
-          className="mb-1.5 block text-sm font-medium text-[#A8A29E]"
+          className="mb-1.5 block text-[11px] font-medium tracking-wide text-[#A8A29E] uppercase"
         >
           Password
         </label>

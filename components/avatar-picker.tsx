@@ -11,7 +11,7 @@ export function AvatarPicker({
 }) {
   return (
     <div
-      className="grid grid-cols-4 gap-3 sm:grid-cols-6"
+      className="grid grid-cols-4 gap-3 sm:grid-cols-6 sm:gap-4"
       role="listbox"
       aria-label="Choose your avatar"
     >
@@ -24,13 +24,19 @@ export function AvatarPicker({
             role="option"
             aria-selected={selected}
             onClick={() => onChange(avatar.id)}
-            className={`flex min-h-11 flex-col items-center gap-1.5 rounded-2xl p-2 transition-colors duration-150 ${
+            className={`flex min-h-11 flex-col items-center gap-1.5 rounded-2xl p-2 transition-all duration-150 ${
               selected
                 ? "bg-[#292524] ring-2 ring-[#EA580C] ring-offset-2 ring-offset-[#1C1917]"
                 : "hover:bg-[#292524]/70"
             }`}
           >
-            <Avatar avatarId={avatar.id} size={48} />
+            <span
+              className={`transition-transform duration-150 ${
+                selected ? "scale-105" : "scale-100"
+              }`}
+            >
+              <Avatar avatarId={avatar.id} size={56} />
+            </span>
             <span className="text-[11px] font-medium capitalize text-[#A8A29E]">
               {avatar.name}
             </span>

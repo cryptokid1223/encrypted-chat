@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import { AuthAtmosphere } from "@/components/auth-atmosphere";
+import { Logo } from "@/components/logo";
 import { hasPrivateKey, savePrivateKey } from "@/lib/keystore";
 
 export function KeyGate({ children }: { children: ReactNode }) {
@@ -51,12 +53,13 @@ export function KeyGate({ children }: { children: ReactNode }) {
 
   if (!hasKey) {
     return (
-      <div className="safe-pb safe-pt flex min-h-dvh flex-1 items-center justify-center bg-[#0C0A09] p-6">
-        <div className="w-full max-w-md rounded-2xl border border-[#292524] bg-[#1C1917] p-6 sm:p-8">
-          <p className="text-center text-lg font-semibold tracking-tight text-[#EA580C]">
-            Celesth
-          </p>
-          <h1 className="mt-6 text-xl font-semibold text-[#FAFAF9]">
+      <div className="relative flex min-h-dvh flex-1 items-center justify-center bg-[#0C0A09] p-6">
+        <AuthAtmosphere />
+        <div className="safe-pb relative z-10 w-full max-w-md rounded-3xl border border-[#292524] bg-[#1C1917] px-8 py-10">
+          <div className="flex justify-center">
+            <Logo size="lg" />
+          </div>
+          <h1 className="mt-8 text-xl font-semibold text-[#FAFAF9]">
             Your encryption key isn&apos;t on this device
           </h1>
           <p className="mt-3 text-sm leading-relaxed text-[#A8A29E]">
@@ -68,7 +71,7 @@ export function KeyGate({ children }: { children: ReactNode }) {
           </p>
 
           <label
-            className={`mt-6 flex min-h-[140px] cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-[#292524] bg-[#0C0A09] px-4 py-8 text-center transition-colors duration-150 hover:border-[#EA580C]/60 ${
+            className={`mt-6 flex min-h-[140px] cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-[#292524] bg-[#0C0A09] px-4 py-8 text-center transition-colors duration-150 hover:border-[#EA580C]/50 ${
               importing ? "opacity-60" : ""
             }`}
           >

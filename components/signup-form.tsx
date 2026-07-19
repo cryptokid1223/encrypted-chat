@@ -111,7 +111,7 @@ export function SignupForm() {
       <div>
         <label
           htmlFor="username"
-          className="mb-1.5 block text-sm font-medium text-[#A8A29E]"
+          className="mb-1.5 block text-[11px] font-medium tracking-wide text-[#A8A29E] uppercase"
         >
           Username
         </label>
@@ -129,7 +129,7 @@ export function SignupForm() {
       <div>
         <label
           htmlFor="password"
-          className="mb-1.5 block text-sm font-medium text-[#A8A29E]"
+          className="mb-1.5 block text-[11px] font-medium tracking-wide text-[#A8A29E] uppercase"
         >
           Password
         </label>
@@ -152,7 +152,7 @@ export function SignupForm() {
       <div>
         <label
           htmlFor="confirm"
-          className="mb-1.5 block text-sm font-medium text-[#A8A29E]"
+          className="mb-1.5 block text-[11px] font-medium tracking-wide text-[#A8A29E] uppercase"
         >
           Confirm password
         </label>
@@ -170,7 +170,7 @@ export function SignupForm() {
       </div>
 
       <div>
-        <p className="mb-3 text-sm font-medium text-[#A8A29E]">
+        <p className="mb-3 text-[11px] font-medium tracking-wide text-[#A8A29E] uppercase">
           Choose your avatar
         </p>
         <AvatarPicker value={avatarId} onChange={setAvatarId} />

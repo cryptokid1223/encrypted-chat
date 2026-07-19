@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { AuthAtmosphere } from "@/components/auth-atmosphere";
+import { Logo } from "@/components/logo";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function HomePage() {
@@ -11,12 +13,13 @@ export default async function HomePage() {
   }
 
   return (
-    <div className="safe-pb safe-pt flex min-h-dvh flex-1 flex-col items-center justify-center bg-[#0C0A09] px-6 py-16">
-      <div className="w-full max-w-md rounded-2xl border border-[#292524] bg-[#1C1917] p-8 text-center">
-        <h1 className="text-3xl font-semibold tracking-tight text-[#EA580C]">
-          Celesth
-        </h1>
-        <p className="mt-3 text-sm leading-relaxed text-[#A8A29E]">
+    <div className="relative flex min-h-dvh flex-1 flex-col items-center justify-center bg-[#0C0A09] px-6 py-16">
+      <AuthAtmosphere />
+      <div className="safe-pb relative z-10 w-full max-w-md rounded-3xl border border-[#292524] bg-[#1C1917] px-8 py-10 text-center sm:px-10">
+        <div className="flex justify-center">
+          <Logo size="lg" />
+        </div>
+        <p className="mt-4 text-sm leading-relaxed text-[#A8A29E]">
           Private messaging that stays on your devices. End-to-end encrypted.
         </p>
         <div className="mt-8 flex flex-col gap-3">

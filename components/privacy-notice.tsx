@@ -1,6 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { AuthAtmosphere } from "@/components/auth-atmosphere";
+import { Logo } from "@/components/logo";
 import { LockIcon } from "@/components/icons";
 import { dismissPrivacyNotice } from "@/lib/privacy-notice";
 
@@ -14,12 +16,13 @@ export function PrivacyNotice() {
   }
 
   return (
-    <div className="safe-pb safe-pt flex min-h-dvh flex-1 items-center justify-center bg-[#0C0A09] px-4 py-10">
-      <div className="w-full max-w-lg">
-        <p className="mb-6 text-center text-lg font-semibold tracking-tight text-[#EA580C]">
-          Celesth
-        </p>
-        <div className="rounded-2xl border border-[#292524] bg-[#1C1917] p-6 sm:p-8">
+    <div className="relative flex min-h-dvh flex-1 items-center justify-center bg-[#0C0A09] px-4 py-10">
+      <AuthAtmosphere />
+      <div className="safe-pb relative z-10 w-full max-w-lg">
+        <div className="mb-6 flex justify-center">
+          <Logo size="lg" />
+        </div>
+        <div className="rounded-3xl border border-[#292524] bg-[#1C1917] px-8 py-10 sm:px-10">
           <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-full border border-[#292524] bg-[#0C0A09]">
             <LockIcon className="h-5 w-5 text-[#EA580C]" />
           </div>

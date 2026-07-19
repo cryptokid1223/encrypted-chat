@@ -65,6 +65,15 @@ body {
   outline-offset: 2px;
 }
 
+button,
+a,
+input,
+label {
+  transition-property: color, background-color, border-color, opacity, transform;
+  transition-duration: 150ms;
+  transition-timing-function: ease;
+}
+
 .safe-pb {
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
