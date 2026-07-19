@@ -3,6 +3,9 @@
  *
  * The private key is stored only on this device.
  * It must NEVER be sent to Supabase or any server.
+ *
+ * Capacitor packages are loaded only via dynamic import() inside functions.
+ * Any native/detection failure falls back to IndexedDB silently.
  */
 
 const DB_NAME = "cipher-keystore";
@@ -16,27 +19,37 @@ type SecureStorage = {
     key: string;
     value: string;
   }) => Promise<{ value: boolean }>;
-  remove: (options: { key: string }) => Promise<{ value: boolean }>;
 };
 
+/** Never throws — false on web, SSR, or any Capacitor load/detect failure. */
 async function isNative(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
   try {
     const core = await import("@capacitor/core");
-    return core.Capacitor.isNativePlatform();
+    return Boolean(core.Capacitor?.isNativePlatform?.());
   } catch {
     return false;
   }
 }
 
-async function getSecureStorage(): Promise<SecureStorage> {
-  const mod = await import("capacitor-secure-storage-plugin");
-  return mod.SecureStoragePlugin;
+/** Never throws — null if the plugin cannot be loaded. */
+async function getSecureStorage(): Promise<SecureStorage | null> {
+  try {
+    const mod = await import("capacitor-secure-storage-plugin");
+    return mod.SecureStoragePlugin ?? null;
+  } catch {
+    return null;
+  }
 }
 
-// ── IndexedDB (web) ──────────────────────────────────────────────
+// ── IndexedDB (web / fallback) ───────────────────────────────────
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") {
+      reject(new Error("IndexedDB unavailable"));
+      return;
+    }
     const request = indexedDB.open(DB_NAME, 1);
     request.onupgradeneeded = () => {
       const db = request.result;
@@ -67,35 +80,43 @@ async function idbSave(base64: string): Promise<void> {
 }
 
 async function idbLoad(): Promise<string | null> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readonly");
-    const request = tx.objectStore(STORE_NAME).get(PRIVATE_KEY_ID);
-    request.onsuccess = () => {
-      db.close();
-      resolve((request.result as string | undefined) ?? null);
-    };
-    request.onerror = () => {
-      db.close();
-      reject(request.error ?? new Error("Failed to load private key"));
-    };
-  });
+  try {
+    const db = await openDb();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const request = tx.objectStore(STORE_NAME).get(PRIVATE_KEY_ID);
+      request.onsuccess = () => {
+        db.close();
+        resolve((request.result as string | undefined) ?? null);
+      };
+      request.onerror = () => {
+        db.close();
+        reject(request.error ?? new Error("Failed to load private key"));
+      };
+    });
+  } catch {
+    return null;
+  }
 }
 
 async function idbClear(): Promise<void> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readwrite");
-    tx.objectStore(STORE_NAME).delete(PRIVATE_KEY_ID);
-    tx.oncomplete = () => {
-      db.close();
-      resolve();
-    };
-    tx.onerror = () => {
-      db.close();
-      reject(tx.error ?? new Error("Failed to clear IndexedDB key"));
-    };
-  });
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      tx.objectStore(STORE_NAME).delete(PRIVATE_KEY_ID);
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        reject(tx.error ?? new Error("Failed to clear IndexedDB key"));
+      };
+    });
+  } catch {
+    // ignore
+  }
 }
 
 // ── Keychain (native) ────────────────────────────────────────────
@@ -105,7 +126,7 @@ async function secureLoad(plugin: SecureStorage): Promise<string | null> {
     const { value } = await plugin.get({ key: SECURE_KEY });
     return value && value.length > 0 ? value : null;
   } catch {
-    // Missing key rejects — treat as absent.
+    // Missing key (or plugin error) — treat as absent, not a failure.
     return null;
   }
 }
@@ -124,37 +145,55 @@ async function migrateIdbToKeychain(
   const fromIdb = await idbLoad();
   if (!fromIdb) return null;
 
-  await secureSave(plugin, fromIdb);
   try {
-    await idbClear();
+    await secureSave(plugin, fromIdb);
   } catch {
-    // Key is already safe in keychain; ignore cleanup failure.
+    // Keep IndexedDB copy if keychain write fails.
+    return fromIdb;
   }
+
+  await idbClear();
   return fromIdb;
 }
 
 // ── Public API ───────────────────────────────────────────────────
 
 export async function savePrivateKey(base64: string): Promise<void> {
-  if (await isNative()) {
-    const plugin = await getSecureStorage();
-    await secureSave(plugin, base64);
-    return;
+  try {
+    if (await isNative()) {
+      const plugin = await getSecureStorage();
+      if (plugin) {
+        await secureSave(plugin, base64);
+        return;
+      }
+    }
+  } catch {
+    // Fall through to IndexedDB.
   }
   await idbSave(base64);
 }
 
 export async function loadPrivateKey(): Promise<string | null> {
-  if (await isNative()) {
-    const plugin = await getSecureStorage();
-    const fromKeychain = await secureLoad(plugin);
-    if (fromKeychain) return fromKeychain;
-    return migrateIdbToKeychain(plugin);
+  try {
+    if (await isNative()) {
+      const plugin = await getSecureStorage();
+      if (plugin) {
+        const fromKeychain = await secureLoad(plugin);
+        if (fromKeychain) return fromKeychain;
+        return await migrateIdbToKeychain(plugin);
+      }
+    }
+  } catch {
+    // Fall through to IndexedDB.
   }
   return idbLoad();
 }
 
 export async function hasPrivateKey(): Promise<boolean> {
-  const key = await loadPrivateKey();
-  return key !== null && key.length > 0;
+  try {
+    const key = await loadPrivateKey();
+    return typeof key === "string" && key.length > 0;
+  } catch {
+    return false;
+  }
 }

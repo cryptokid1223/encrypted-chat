@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeftIcon, LockIcon, SendIcon } from "@/components/icons";
+import { useKeyGate } from "@/components/key-gate";
 import {
   formatDayDivider,
   formatMessageTime,
@@ -12,7 +13,7 @@ import {
 } from "@/lib/chat";
 import { decryptMessage, encryptMessage } from "@/lib/crypto";
 import { Avatar } from "@/lib/avatars";
-import { loadPrivateKey } from "@/lib/keystore";
+import { hasPrivateKey, loadPrivateKey } from "@/lib/keystore";
 import { createClient } from "@/lib/supabase/client";
 
 type DisplayMessage = {
@@ -61,6 +62,7 @@ async function decryptRow(
 export function ChatRoom() {
   const params = useParams<{ conversationId: string }>();
   const conversationId = params.conversationId;
+  const { requireKeyImport } = useKeyGate();
 
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
@@ -96,12 +98,14 @@ export function ChatRoom() {
       seenIdsRef.current = new Set();
 
       try {
+        if (!(await hasPrivateKey())) {
+          if (!cancelled) requireKeyImport();
+          return;
+        }
+
         const privateKey = await loadPrivateKey();
         if (!privateKey) {
-          if (!cancelled) {
-            setError("Private key missing on this device.");
-            setStatus("error");
-          }
+          if (!cancelled) requireKeyImport();
           return;
         }
 
@@ -245,14 +249,19 @@ export function ChatRoom() {
         void supabase.removeChannel(channel);
       }
     };
-  }, [conversationId]);
+  }, [conversationId, requireKeyImport]);
 
   async function sendMessage(e: React.FormEvent) {
     e.preventDefault();
     setSendError(null);
 
     const text = draft.trim();
-    if (!text || !myUserId || !theirPublicKey || !myPrivateKey) return;
+    if (!text || !myUserId || !theirPublicKey) return;
+
+    if (!(await hasPrivateKey()) || !myPrivateKey) {
+      requireKeyImport();
+      return;
+    }
 
     setSending(true);
     try {
@@ -292,7 +301,8 @@ export function ChatRoom() {
       });
       setDraft("");
     } catch {
-      setSendError("Could not encrypt or send message.");
+      // Never surface a raw crypto failure — force key import with toast.
+      requireKeyImport();
     } finally {
       setSending(false);
     }
@@ -324,23 +334,25 @@ export function ChatRoom() {
 
   return (
     <div className="flex h-full min-h-0 w-full flex-1 flex-col bg-[#0F0E0D]">
-      <div className="safe-pt flex h-14 shrink-0 items-center gap-2.5 border-b border-[#2E2B28] bg-[#1A1816] px-3">
-        <Link
-          href="/chats"
-          aria-label="Back to chats"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9] md:hidden"
-        >
-          <ChevronLeftIcon className="h-5 w-5" />
-        </Link>
-        <Avatar avatarId={otherAvatarId} size={32} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px] font-semibold leading-[1.4] text-[#FAFAF9]">
-            {otherUsername}
-          </p>
-          <p className="flex items-center gap-1 text-[12px] leading-[1.4] text-[#6E6963]">
-            <LockIcon className="h-3 w-3" />
-            End-to-end encrypted
-          </p>
+      <div className="safe-pt shrink-0 border-b border-[#2E2B28] bg-[#1A1816]">
+        <div className="flex h-14 items-center gap-2.5 px-3">
+          <Link
+            href="/chats"
+            aria-label="Back to chats"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9] md:hidden"
+          >
+            <ChevronLeftIcon className="h-5 w-5" />
+          </Link>
+          <Avatar avatarId={otherAvatarId} size={32} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[15px] font-semibold leading-[1.4] text-[#FAFAF9]">
+              {otherUsername}
+            </p>
+            <p className="flex items-center gap-1 text-[12px] leading-[1.4] text-[#6E6963]">
+              <LockIcon className="h-3 w-3" />
+              End-to-end encrypted
+            </p>
+          </div>
         </div>
       </div>
 

@@ -56,29 +56,31 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <div className="flex h-dvh w-full bg-[#0F0E0D]">
-      <div className="flex h-full w-full max-w-[1400px]">
+    <div className="safe-px flex h-dvh w-full overflow-hidden bg-[#0F0E0D]">
+      <div className="flex h-full min-h-0 w-full max-w-[1400px]">
         <aside
-          className={`safe-pt safe-pb flex h-full w-full flex-col border-[#2E2B28] bg-[#1A1816] md:w-[320px] md:shrink-0 md:border-r ${
+          className={`flex h-full min-h-0 w-full flex-col border-[#2E2B28] bg-[#1A1816] md:w-[320px] md:shrink-0 md:border-r ${
             isChatList ? "flex" : "hidden md:flex"
           }`}
         >
-          <header className="flex h-12 shrink-0 items-center justify-between px-3">
-            <Logo href="/chats" size="sm" markSize={20} />
-            <Link
-              href="/settings"
-              aria-label="Settings"
-              className="flex h-10 w-10 items-center justify-center rounded-full transition-colors duration-150 ease-in-out hover:bg-[#242220]"
-            >
-              <Avatar avatarId={avatarId} size={32} />
-            </Link>
+          <header className="safe-pt shrink-0 border-b border-transparent">
+            <div className="flex h-12 items-center justify-between px-3">
+              <Logo href="/chats" size="sm" markSize={20} />
+              <Link
+                href="/settings"
+                aria-label="Settings"
+                className="flex h-10 w-10 items-center justify-center rounded-full transition-colors duration-150 ease-in-out hover:bg-[#242220]"
+              >
+                <Avatar avatarId={avatarId} size={32} />
+              </Link>
+            </div>
           </header>
 
           <ChatList activeConversationId={activeConversationId} />
         </aside>
 
         <main
-          className={`min-h-0 min-w-0 flex-1 flex-col bg-[#0F0E0D] ${
+          className={`min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#0F0E0D] ${
             isChatList ? "hidden md:flex" : "flex"
           }`}
         >
