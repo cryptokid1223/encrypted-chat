@@ -110,60 +110,55 @@ export function SettingsPanel() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[#0C0A09]">
-      {/* Mobile back header */}
-      <div className="safe-pt sticky top-0 z-10 border-b border-[#292524] bg-[#1C1917] md:hidden">
-        <div className="flex h-14 items-center gap-1 px-2">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[#0F0E0D]">
+      <div className="safe-pt sticky top-0 z-10 border-b border-[#2E2B28] bg-[#1A1816] md:hidden">
+        <div className="flex h-12 items-center gap-1 px-2">
           <Link
             href="/chats"
             aria-label="Back to chats"
-            className="flex h-11 w-11 items-center justify-center rounded-full text-[#A8A29E] transition-colors duration-150 hover:bg-[#292524] hover:text-[#FAFAF9]"
+            className="flex h-10 w-10 items-center justify-center rounded-full text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9]"
           >
             <ChevronLeftIcon className="h-5 w-5" />
           </Link>
-          <h1 className="text-[15px] font-semibold text-[#FAFAF9]">Settings</h1>
+          <span className="text-[14px] font-medium text-[#FAFAF9]">Settings</span>
         </div>
       </div>
 
-      <div className="safe-pb mx-auto w-full max-w-2xl space-y-6 p-4 sm:p-8">
-        <div className="hidden md:block">
-          <h1 className="text-2xl font-semibold tracking-tight text-[#FAFAF9]">
-            Settings
-          </h1>
-          <p className="mt-1 text-sm text-[#A8A29E]">
-            Profile and encryption key
-          </p>
-        </div>
+      <div className="safe-pb mx-auto w-full max-w-xl space-y-4 p-4 sm:p-6">
+        <p className="hidden text-[13px] text-[#6E6963] md:block">
+          Profile and encryption key
+        </p>
 
-        <section className="rounded-2xl border border-[#292524] bg-[#1C1917] p-5 sm:p-6">
-          <h2 className="flex items-center gap-2.5 text-base font-semibold text-[#FAFAF9]">
-            <span className="inline-block h-4 w-1 rounded-full bg-[#EA580C]" />
+        <section className="rounded-2xl border border-[#2E2B28] bg-[#1A1816] p-5">
+          <h2 className="text-[13px] font-medium uppercase tracking-wide text-[#6E6963]">
             Avatar
           </h2>
-          <p className="mt-1 pl-[14px] text-sm text-[#A8A29E]">
-            Shown next to your username in chats
-          </p>
-          <div className="mt-4">
-            <AvatarPicker value={avatarId} onChange={updateAvatar} />
+          <div className="mt-3">
+            <AvatarPicker
+              value={avatarId}
+              onChange={updateAvatar}
+              size={48}
+              showLabels={false}
+              columns="settings"
+            />
           </div>
           {avatarSaving ? (
-            <p className="mt-3 text-sm text-[#A8A29E]">Saving…</p>
+            <p className="mt-2 text-[13px] text-[#6E6963]">Saving…</p>
           ) : avatarMessage ? (
-            <p className="mt-3 text-sm text-[#A8A29E]">{avatarMessage}</p>
+            <p className="mt-2 text-[13px] text-[#6E6963]">{avatarMessage}</p>
           ) : null}
         </section>
 
-        <section className="rounded-2xl border border-[#292524] bg-[#1C1917] p-5 sm:p-6">
-          <h2 className="flex items-center gap-2.5 text-base font-semibold text-[#FAFAF9]">
-            <span className="inline-block h-4 w-1 rounded-full bg-[#EA580C]" />
+        <section className="rounded-2xl border border-[#2E2B28] bg-[#1A1816] p-5">
+          <h2 className="text-[13px] font-medium uppercase tracking-wide text-[#6E6963]">
             Key backup
           </h2>
-          <p className="mt-2 pl-[14px] text-sm leading-relaxed text-[#A8A29E]">
+          <p className="mt-2 text-[14px] leading-[1.4] text-[#FAFAF9]/90">
             Your encryption key only exists on this device. This backup file
             lets you read your messages if you switch devices.
           </p>
-          <div className="mt-3 rounded-2xl border border-[#78350F]/50 bg-[#451A03] p-3.5">
-            <p className="text-sm leading-relaxed text-[#FBBF24]/90">
+          <div className="mt-3 rounded-xl border border-[#78350F]/40 bg-[#451A03] p-3">
+            <p className="text-[13px] leading-[1.4] text-[#FBBF24]/90">
               Anyone with this file can read your messages. If you lose this
               file and lose this device, your messages are gone forever.
             </p>
@@ -171,30 +166,29 @@ export function SettingsPanel() {
           <button
             type="button"
             onClick={downloadBackup}
-            className="mt-4 flex h-12 w-full items-center justify-center rounded-2xl bg-[#EA580C] px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-[#C2410C] sm:w-auto"
+            className="mt-3 flex h-10 items-center justify-center rounded-xl bg-[#EA580C] px-4 text-[13px] font-medium text-white transition-colors duration-150 ease-in-out hover:bg-[#C2410C]"
           >
             Download key backup
           </button>
           {message ? (
-            <p className="mt-3 text-sm text-[#A8A29E]">{message}</p>
+            <p className="mt-2 text-[13px] text-[#6E6963]">{message}</p>
           ) : null}
           {error ? (
-            <p className="mt-3 text-sm text-red-400" role="alert">
+            <p className="mt-2 text-[13px] text-red-400" role="alert">
               {error}
             </p>
           ) : null}
         </section>
 
-        <section className="rounded-2xl border border-[#292524] bg-[#1C1917] p-5 sm:p-6">
-          <h2 className="flex items-center gap-2.5 text-base font-semibold text-[#FAFAF9]">
-            <span className="inline-block h-4 w-1 rounded-full bg-[#EA580C]" />
+        <section className="rounded-2xl border border-[#2E2B28] bg-[#1A1816] p-5">
+          <h2 className="text-[13px] font-medium uppercase tracking-wide text-[#6E6963]">
             Session
           </h2>
           <button
             type="button"
             onClick={logout}
             disabled={busy}
-            className="mt-4 text-sm font-medium text-[#A8A29E] transition-colors duration-150 hover:text-red-400 disabled:opacity-40"
+            className="mt-3 text-[14px] font-medium text-[#6E6963] transition-colors duration-150 ease-in-out hover:text-red-400 disabled:opacity-40"
           >
             {busy ? "Logging out…" : "Log out"}
           </button>

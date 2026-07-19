@@ -13,25 +13,25 @@ export default async function HomePage() {
   }
 
   return (
-    <div className="relative flex min-h-dvh flex-1 flex-col items-center justify-center bg-[#0C0A09] px-6 py-16">
+    <div className="relative flex min-h-dvh flex-1 flex-col items-center justify-center overflow-y-auto bg-[#0F0E0D] px-4 py-10">
       <AuthAtmosphere />
-      <div className="safe-pb relative z-10 w-full max-w-md rounded-3xl border border-[#292524] bg-[#1C1917] px-8 py-10 text-center sm:px-10">
+      <div className="safe-pb relative z-10 w-full max-w-md rounded-3xl border border-[#2E2B28] bg-[#1A1816] p-8 text-center">
         <div className="flex justify-center">
-          <Logo size="lg" />
+          <Logo size="lg" markSize={28} />
         </div>
-        <p className="mt-4 text-sm leading-relaxed text-[#A8A29E]">
+        <p className="mt-3 text-[13px] leading-[1.4] text-[#6E6963]">
           Private messaging that stays on your devices. End-to-end encrypted.
         </p>
-        <div className="mt-8 flex flex-col gap-3">
+        <div className="mt-6 flex flex-col gap-2.5">
           <Link
             href="/signup"
-            className="flex h-12 items-center justify-center rounded-2xl bg-[#EA580C] px-5 text-sm font-medium text-white transition-colors duration-150 hover:bg-[#C2410C]"
+            className="flex h-12 items-center justify-center rounded-xl bg-[#EA580C] px-5 text-[14px] font-medium text-white transition-colors duration-150 ease-in-out hover:bg-[#C2410C]"
           >
             Sign up
           </Link>
           <Link
             href="/login"
-            className="flex h-12 items-center justify-center rounded-2xl px-5 text-sm font-medium text-[#A8A29E] transition-colors duration-150 hover:bg-[#292524] hover:text-[#FAFAF9]"
+            className="flex h-12 items-center justify-center rounded-xl px-5 text-[14px] font-medium text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9]"
           >
             Log in
           </Link>

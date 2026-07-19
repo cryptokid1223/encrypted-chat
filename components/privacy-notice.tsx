@@ -16,20 +16,20 @@ export function PrivacyNotice() {
   }
 
   return (
-    <div className="relative flex min-h-dvh flex-1 items-center justify-center bg-[#0C0A09] px-4 py-10">
+    <div className="relative flex min-h-dvh flex-1 justify-center overflow-y-auto bg-[#0F0E0D] px-4 py-8">
       <AuthAtmosphere />
-      <div className="safe-pb relative z-10 w-full max-w-lg">
-        <div className="mb-6 flex justify-center">
-          <Logo size="lg" />
+      <div className="safe-pb relative z-10 my-auto w-full max-w-lg">
+        <div className="mb-5 flex justify-center">
+          <Logo size="lg" markSize={28} />
         </div>
-        <div className="rounded-3xl border border-[#292524] bg-[#1C1917] px-8 py-10 sm:px-10">
-          <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-full border border-[#292524] bg-[#0C0A09]">
-            <LockIcon className="h-5 w-5 text-[#EA580C]" />
+        <div className="rounded-3xl border border-[#2E2B28] bg-[#1A1816] p-8">
+          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-full border border-[#2E2B28] bg-[#242220]">
+            <LockIcon className="h-4 w-4 text-[#EA580C]" />
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-[#FAFAF9]">
+          <p className="text-[20px] font-semibold leading-[1.4] text-[#FAFAF9]">
             How your privacy works
-          </h1>
-          <ul className="mt-5 space-y-4 text-[15px] leading-relaxed text-[#A8A29E]">
+          </p>
+          <ul className="mt-4 space-y-3 text-[14px] leading-[1.4] text-[#6E6963]">
             <li>
               You signed up with only a username — we never collect your email,
               phone number, or name.
@@ -51,7 +51,7 @@ export function PrivacyNotice() {
           <button
             type="button"
             onClick={acknowledge}
-            className="mt-8 flex h-12 w-full items-center justify-center rounded-2xl bg-[#EA580C] px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-[#C2410C]"
+            className="mt-6 flex h-12 w-full items-center justify-center rounded-xl bg-[#EA580C] px-4 text-[14px] font-medium text-white transition-colors duration-150 ease-in-out hover:bg-[#C2410C]"
           >
             I understand
           </button>

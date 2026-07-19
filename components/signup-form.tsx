@@ -107,11 +107,11 @@ export function SignupForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-5">
+    <form onSubmit={onSubmit} className="space-y-4">
       <div>
         <label
           htmlFor="username"
-          className="mb-1.5 block text-[11px] font-medium tracking-wide text-[#A8A29E] uppercase"
+          className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-[#6E6963]"
         >
           Username
         </label>
@@ -121,7 +121,7 @@ export function SignupForm() {
           autoComplete="username"
           value={username}
           onChange={(e) => setUsername(e.target.value.toLowerCase())}
-          className="h-12 w-full rounded-2xl border border-[#292524] bg-[#0C0A09] px-4 text-[#FAFAF9] outline-none transition-[border-color] duration-150 focus:border-[#EA580C]"
+          className="h-12 w-full rounded-xl border border-[#2E2B28] bg-[#242220] px-4 text-[14px] text-[#FAFAF9] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
           required
         />
       </div>
@@ -129,7 +129,7 @@ export function SignupForm() {
       <div>
         <label
           htmlFor="password"
-          className="mb-1.5 block text-[11px] font-medium tracking-wide text-[#A8A29E] uppercase"
+          className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-[#6E6963]"
         >
           Password
         </label>
@@ -140,19 +140,19 @@ export function SignupForm() {
           autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="h-12 w-full rounded-2xl border border-[#292524] bg-[#0C0A09] px-4 text-[#FAFAF9] outline-none transition-[border-color] duration-150 focus:border-[#EA580C]"
+          className="h-12 w-full rounded-xl border border-[#2E2B28] bg-[#242220] px-4 text-[14px] text-[#FAFAF9] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
           required
           minLength={10}
         />
         {strength ? (
-          <p className="mt-1.5 text-xs text-[#78716C]">{strength}</p>
+          <p className="mt-1.5 text-[12px] text-[#6E6963]">{strength}</p>
         ) : null}
       </div>
 
       <div>
         <label
           htmlFor="confirm"
-          className="mb-1.5 block text-[11px] font-medium tracking-wide text-[#A8A29E] uppercase"
+          className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-[#6E6963]"
         >
           Confirm password
         </label>
@@ -163,37 +163,43 @@ export function SignupForm() {
           autoComplete="new-password"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
-          className="h-12 w-full rounded-2xl border border-[#292524] bg-[#0C0A09] px-4 text-[#FAFAF9] outline-none transition-[border-color] duration-150 focus:border-[#EA580C]"
+          className="h-12 w-full rounded-xl border border-[#2E2B28] bg-[#242220] px-4 text-[14px] text-[#FAFAF9] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
           required
           minLength={10}
         />
       </div>
 
       <div>
-        <p className="mb-3 text-[11px] font-medium tracking-wide text-[#A8A29E] uppercase">
+        <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-[#6E6963]">
           Choose your avatar
         </p>
-        <AvatarPicker value={avatarId} onChange={setAvatarId} />
+        <AvatarPicker
+          value={avatarId}
+          onChange={setAvatarId}
+          size={44}
+          showLabels={false}
+          columns="auth"
+        />
       </div>
 
-      <div className="rounded-2xl border border-[#78350F]/40 bg-[#451A03] p-4">
-        <p className="text-sm font-medium leading-relaxed text-[#FBBF24]/90">
+      <div className="rounded-xl border border-[#78350F]/40 bg-[#451A03] p-3.5">
+        <p className="text-[13px] font-medium leading-[1.4] text-[#FBBF24]/90">
           No email means no password reset. If you forget your password, this
           account cannot be recovered by anyone. Save it in a password manager.
         </p>
-        <label className="mt-3 flex min-h-11 items-start gap-3 text-sm text-[#FBBF24]/80">
+        <label className="mt-2.5 flex min-h-10 items-start gap-2.5 text-[13px] text-[#FBBF24]/80">
           <input
             type="checkbox"
             checked={acknowledged}
             onChange={(e) => setAcknowledged(e.target.checked)}
-            className="mt-1 h-4 w-4 accent-[#EA580C]"
+            className="mt-0.5 h-4 w-4 accent-[#EA580C]"
           />
           <span>I understand — I will save my password myself.</span>
         </label>
       </div>
 
       {error ? (
-        <p className="text-sm text-red-400" role="alert">
+        <p className="text-[13px] text-red-400" role="alert">
           {error}
         </p>
       ) : null}
@@ -201,16 +207,16 @@ export function SignupForm() {
       <button
         type="submit"
         disabled={!canSubmit}
-        className="flex h-12 w-full items-center justify-center rounded-2xl bg-[#EA580C] px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-[#C2410C] disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex h-12 w-full items-center justify-center rounded-xl bg-[#EA580C] px-4 text-[14px] font-medium text-white transition-colors duration-150 ease-in-out hover:bg-[#C2410C] disabled:cursor-not-allowed disabled:opacity-40"
       >
         {busy ? "Creating account…" : "Create account"}
       </button>
 
-      <p className="text-center text-sm text-[#A8A29E]">
+      <p className="text-center text-[13px] text-[#6E6963]">
         Already have an account?{" "}
         <Link
           href="/login"
-          className="font-medium text-[#EA580C] transition-colors duration-150 hover:text-[#C2410C]"
+          className="font-medium text-[#EA580C] transition-colors duration-150 ease-in-out hover:text-[#C2410C]"
         >
           Log in
         </Link>

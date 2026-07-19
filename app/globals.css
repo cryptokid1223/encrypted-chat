@@ -1,16 +1,14 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0c0a09;
-  --surface: #1c1917;
-  --elevated: #292524;
-  --border: #292524;
+  --background: #0f0e0d;
+  --surface: #1a1816;
+  --elevated: #242220;
+  --border: #2e2b28;
   --foreground: #fafaf9;
-  --muted: #a8a29e;
-  --muted-dim: #78716c;
+  --muted: #6e6963;
   --accent: #ea580c;
   --accent-hover: #c2410c;
-  --radius: 16px;
 }
 
 @theme inline {
@@ -32,6 +30,8 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-inter), system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -40,15 +40,14 @@ body {
   color: #fafaf9;
 }
 
-/* Subtle dark scrollbars */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #292524 transparent;
+  scrollbar-color: #2e2b28 transparent;
 }
 
 *::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 *::-webkit-scrollbar-track {
@@ -56,7 +55,7 @@ body {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #292524;
+  background: #2e2b28;
   border-radius: 999px;
 }
 

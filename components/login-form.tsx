@@ -46,11 +46,11 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-5">
+    <form onSubmit={onSubmit} className="space-y-4">
       <div>
         <label
           htmlFor="username"
-          className="mb-1.5 block text-[11px] font-medium tracking-wide text-[#A8A29E] uppercase"
+          className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-[#6E6963]"
         >
           Username
         </label>
@@ -60,7 +60,7 @@ export function LoginForm() {
           autoComplete="username"
           value={username}
           onChange={(e) => setUsername(e.target.value.toLowerCase())}
-          className="h-12 w-full rounded-2xl border border-[#292524] bg-[#0C0A09] px-4 text-[#FAFAF9] outline-none transition-[border-color] duration-150 focus:border-[#EA580C]"
+          className="h-12 w-full rounded-xl border border-[#2E2B28] bg-[#242220] px-4 text-[14px] text-[#FAFAF9] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
           required
         />
       </div>
@@ -68,7 +68,7 @@ export function LoginForm() {
       <div>
         <label
           htmlFor="password"
-          className="mb-1.5 block text-[11px] font-medium tracking-wide text-[#A8A29E] uppercase"
+          className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-[#6E6963]"
         >
           Password
         </label>
@@ -79,13 +79,13 @@ export function LoginForm() {
           autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="h-12 w-full rounded-2xl border border-[#292524] bg-[#0C0A09] px-4 text-[#FAFAF9] outline-none transition-[border-color] duration-150 focus:border-[#EA580C]"
+          className="h-12 w-full rounded-xl border border-[#2E2B28] bg-[#242220] px-4 text-[14px] text-[#FAFAF9] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
           required
         />
       </div>
 
       {error ? (
-        <p className="text-sm text-red-400" role="alert">
+        <p className="text-[13px] text-red-400" role="alert">
           {error}
         </p>
       ) : null}
@@ -93,16 +93,16 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={busy}
-        className="flex h-12 w-full items-center justify-center rounded-2xl bg-[#EA580C] px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-[#C2410C] disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex h-12 w-full items-center justify-center rounded-xl bg-[#EA580C] px-4 text-[14px] font-medium text-white transition-colors duration-150 ease-in-out hover:bg-[#C2410C] disabled:cursor-not-allowed disabled:opacity-40"
       >
         {busy ? "Logging in…" : "Log in"}
       </button>
 
-      <p className="text-center text-sm text-[#A8A29E]">
+      <p className="text-center text-[13px] text-[#6E6963]">
         New here?{" "}
         <Link
           href="/signup"
-          className="font-medium text-[#EA580C] transition-colors duration-150 hover:text-[#C2410C]"
+          className="font-medium text-[#EA580C] transition-colors duration-150 ease-in-out hover:text-[#C2410C]"
         >
           Sign up
         </Link>

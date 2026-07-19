@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NewChatModal } from "@/components/new-chat-modal";
 import { LockIcon, PencilIcon } from "@/components/icons";
+import { formatListTime } from "@/lib/chat";
 import { Avatar, AVATARS } from "@/lib/avatars";
 import { createClient } from "@/lib/supabase/client";
 
@@ -283,62 +284,67 @@ export function ChatList({
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <div className="px-4 pb-2 pt-4">
-        <h1 className="text-xl font-semibold tracking-tight text-[#FAFAF9]">
-          Chats
-        </h1>
+      <div className="px-3 pb-2 pt-1">
+        <div className="flex h-9 items-center rounded-lg border border-[#2E2B28] bg-[#242220] px-3 text-[13px] text-[#6E6963]">
+          Search
+        </div>
       </div>
 
       {loadingList ? (
-        <p className="px-4 py-8 text-sm text-[#A8A29E]">Loading…</p>
+        <p className="px-3 py-6 text-[13px] text-[#6E6963]">Loading…</p>
       ) : listError ? (
-        <p className="px-4 py-8 text-sm text-red-400" role="alert">
+        <p className="px-3 py-6 text-[13px] text-red-400" role="alert">
           {listError}
         </p>
       ) : conversations.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center px-6 pb-24 pt-8 text-center">
-          <div className="mb-6 flex -space-x-3">
+        <div className="flex flex-1 flex-col items-center justify-center px-5 pb-20 pt-6 text-center">
+          <div className="mb-4 flex -space-x-2">
             {AVATARS.slice(0, 4).map((a) => (
               <Avatar
                 key={a.id}
                 avatarId={a.id}
-                size={48}
-                className="ring-2 ring-[#1C1917]"
+                size={40}
+                className="ring-2 ring-[#1A1816]"
               />
             ))}
           </div>
-          <h2 className="text-lg font-semibold text-[#FAFAF9]">No chats yet</h2>
-          <p className="mt-2 max-w-xs text-sm leading-relaxed text-[#A8A29E]">
-            Start a private conversation with someone by their Celesth username.
+          <p className="text-[14px] font-medium text-[#FAFAF9]">No chats yet</p>
+          <p className="mt-1 max-w-[220px] text-[13px] leading-[1.4] text-[#6E6963]">
+            Start a private conversation by username.
           </p>
           <button
             type="button"
             onClick={() => setComposeOpen(true)}
-            className="mt-6 flex h-12 min-w-[160px] items-center justify-center rounded-2xl bg-[#EA580C] px-6 text-sm font-medium text-white transition-colors duration-150 hover:bg-[#C2410C]"
+            className="mt-4 flex h-10 min-w-[140px] items-center justify-center rounded-xl bg-[#EA580C] px-5 text-[13px] font-medium text-white transition-colors duration-150 ease-in-out hover:bg-[#C2410C]"
           >
             Start a chat
           </button>
         </div>
       ) : (
-        <ul className="min-h-0 flex-1 overflow-y-auto pb-24">
+        <ul className="min-h-0 flex-1 overflow-y-auto pb-20">
           {conversations.map((c) => {
             const active = activeConversationId === c.id;
             return (
               <li key={c.id}>
                 <Link
                   href={`/chats/${c.id}`}
-                  className={`flex min-h-[72px] items-center gap-3 border-l-2 px-4 py-3 transition-colors duration-150 ${
+                  className={`flex h-16 items-center gap-3 px-3 transition-colors duration-150 ease-in-out ${
                     active
-                      ? "border-[#EA580C] bg-[#292524]"
-                      : "border-transparent hover:bg-[#292524]/60 active:bg-[#292524]"
+                      ? "bg-[#242220]"
+                      : "hover:bg-[#242220]/70 active:bg-[#242220]"
                   }`}
                 >
-                  <Avatar avatarId={c.otherAvatarId} size={44} />
+                  <Avatar avatarId={c.otherAvatarId} size={40} />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[15px] font-medium text-[#FAFAF9]">
-                      {c.otherUsername}
-                    </p>
-                    <p className="mt-0.5 flex items-center gap-1 text-[13px] text-[#A8A29E]">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="truncate text-[14px] font-medium text-[#FAFAF9]">
+                        {c.otherUsername}
+                      </p>
+                      <span className="shrink-0 text-[11px] text-[#6E6963]">
+                        {formatListTime(c.lastActivity)}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 flex items-center gap-1 text-[13px] text-[#6E6963]">
                       <LockIcon className="h-3 w-3 shrink-0" />
                       <span className="truncate">Encrypted message</span>
                     </p>
@@ -355,9 +361,9 @@ export function ChatList({
           type="button"
           onClick={() => setComposeOpen(true)}
           aria-label="New chat"
-          className="absolute bottom-4 right-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#EA580C] text-white transition-colors duration-150 hover:bg-[#C2410C] active:bg-[#C2410C]"
+          className="absolute bottom-4 right-4 flex h-12 w-12 items-center justify-center rounded-full border border-[#2E2B28] bg-[#EA580C] text-white transition-colors duration-150 ease-in-out hover:bg-[#C2410C]"
         >
-          <PencilIcon className="h-6 w-6" />
+          <PencilIcon className="h-5 w-5" />
         </button>
       ) : null}
 

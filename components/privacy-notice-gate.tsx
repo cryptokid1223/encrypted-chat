@@ -19,7 +19,7 @@ export function PrivacyNoticeGate({ children }: { children: ReactNode }) {
 
   if (!allowed) {
     return (
-      <div className="flex min-h-dvh flex-1 items-center justify-center bg-[#0C0A09] p-6 text-sm text-[#A8A29E]">
+      <div className="flex min-h-dvh flex-1 items-center justify-center bg-[#0F0E0D] p-6 text-[13px] text-[#6E6963]">
         Loading…
       </div>
     );

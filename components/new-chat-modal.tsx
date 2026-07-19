@@ -143,26 +143,26 @@ export function NewChatModal({
       <button
         type="button"
         aria-label="Close"
-        className="absolute inset-0 bg-black/60 transition-opacity duration-150"
+        className="absolute inset-0 bg-black/60 transition-opacity duration-150 ease-in-out"
         onClick={onClose}
       />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-chat-title"
-        className="safe-pb relative z-10 w-full max-w-lg rounded-t-2xl border border-[#292524] bg-[#1C1917] p-6 sm:rounded-2xl"
+        className="safe-pb relative z-10 w-full max-w-lg rounded-t-2xl border border-[#2E2B28] bg-[#1A1816] p-5 sm:rounded-2xl"
       >
-        <h2
+        <p
           id="new-chat-title"
-          className="text-lg font-semibold text-[#FAFAF9]"
+          className="text-[15px] font-semibold text-[#FAFAF9]"
         >
           New chat
-        </h2>
-        <p className="mt-1 text-sm text-[#A8A29E]">
+        </p>
+        <p className="mt-1 text-[13px] text-[#6E6963]">
           Enter their exact Celesth username
         </p>
 
-        <form onSubmit={startChat} className="mt-5 space-y-4">
+        <form onSubmit={startChat} className="mt-4 space-y-3">
           <input
             ref={inputRef}
             value={username}
@@ -172,25 +172,25 @@ export function NewChatModal({
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
-            className="h-12 w-full rounded-2xl border border-[#292524] bg-[#0C0A09] px-4 text-[15px] text-[#FAFAF9] placeholder:text-[#78716C] outline-none transition-[border-color] duration-150 focus:border-[#EA580C]"
+            className="h-12 w-full rounded-xl border border-[#2E2B28] bg-[#242220] px-4 text-[14px] text-[#FAFAF9] placeholder:text-[#6E6963] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
           />
           {error ? (
-            <p className="text-sm text-red-400" role="alert">
+            <p className="text-[13px] text-red-400" role="alert">
               {error}
             </p>
           ) : null}
-          <div className="flex gap-3 pt-1">
+          <div className="flex gap-2 pt-1">
             <button
               type="button"
               onClick={onClose}
-              className="h-12 flex-1 rounded-2xl px-4 text-sm font-medium text-[#A8A29E] transition-colors duration-150 hover:bg-[#292524] hover:text-[#FAFAF9]"
+              className="h-11 flex-1 rounded-xl px-4 text-[13px] font-medium text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9]"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={busy || !username.trim()}
-              className="h-12 flex-1 rounded-2xl bg-[#EA580C] px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-[#C2410C] disabled:opacity-40"
+              className="h-11 flex-1 rounded-xl bg-[#EA580C] px-4 text-[13px] font-medium text-white transition-colors duration-150 ease-in-out hover:bg-[#C2410C] disabled:opacity-40"
             >
               {busy ? "Opening…" : "Chat"}
             </button>
