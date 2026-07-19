@@ -82,8 +82,8 @@ export function ChatRoom() {
 
   useEffect(() => {
     let cancelled = false;
-    let channel: ReturnType<ReturnType<typeof createClient>["channel"]> | null =
-      null;
+    const supabase = createClient();
+    let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function setup() {
       setStatus("loading");
@@ -100,7 +100,6 @@ export function ChatRoom() {
           return;
         }
 
-        const supabase = createClient();
         const {
           data: { user },
         } = await supabase.auth.getUser();
@@ -205,13 +204,18 @@ export function ChatRoom() {
             (payload) => {
               void (async () => {
                 const row = payload.new as EncryptedRow;
+                // Skip duplicates from optimistic send + realtime echo.
                 if (!row?.id || seenIdsRef.current.has(row.id)) return;
                 seenIdsRef.current.add(row.id);
+
                 const display = await decryptRow(
                   row,
                   otherProfile.public_key,
                   privateKey,
                 );
+
+                if (cancelled) return;
+
                 setMessages((prev) => {
                   if (prev.some((m) => m.id === display.id)) return prev;
                   return [...prev, display];
@@ -233,7 +237,6 @@ export function ChatRoom() {
     return () => {
       cancelled = true;
       if (channel) {
-        const supabase = createClient();
         void supabase.removeChannel(channel);
       }
     };

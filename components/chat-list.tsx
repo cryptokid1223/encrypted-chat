@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { NewChatModal } from "@/components/new-chat-modal";
 import { LockIcon, PencilIcon } from "@/components/icons";
 import { Avatar, AVATARS } from "@/lib/avatars";
@@ -11,7 +11,28 @@ type ConversationRow = {
   id: string;
   otherUsername: string;
   otherAvatarId: string | null;
+  lastActivity: string;
 };
+
+type ConversationInsert = {
+  id: string;
+  participant_a: string;
+  participant_b: string;
+  created_at: string;
+};
+
+type MessageInsert = {
+  id: string;
+  conversation_id: string;
+  created_at: string;
+};
+
+function sortByActivity(rows: ConversationRow[]): ConversationRow[] {
+  return [...rows].sort(
+    (a, b) =>
+      new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime(),
+  );
+}
 
 export function ChatList({
   activeConversationId,
@@ -22,6 +43,18 @@ export function ChatList({
   const [loadingList, setLoadingList] = useState(true);
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [listError, setListError] = useState<string | null>(null);
+  const [myUserId, setMyUserId] = useState<string | null>(null);
+
+  const conversationsRef = useRef(conversations);
+  const myUserIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  useEffect(() => {
+    myUserIdRef.current = myUserId;
+  }, [myUserId]);
 
   const loadConversations = useCallback(async () => {
     setListError(null);
@@ -35,6 +68,9 @@ export function ChatList({
         setListError("Not signed in.");
         return;
       }
+
+      setMyUserId(user.id);
+      myUserIdRef.current = user.id;
 
       const { data: rows, error: convError } = await supabase
         .from("conversations")
@@ -76,20 +112,33 @@ export function ChatList({
         ]),
       );
 
-      setConversations(
-        rows.map((row) => {
-          const otherId =
-            row.participant_a === user.id
-              ? row.participant_b
-              : row.participant_a;
-          const profile = profileById.get(otherId as string);
-          return {
-            id: row.id as string,
-            otherUsername: profile?.username ?? "Unknown",
-            otherAvatarId: profile?.avatar_id ?? null,
-          };
-        }),
+      // Preserve fresher lastActivity from live events across soft refreshes.
+      const prevById = new Map(
+        conversationsRef.current.map((c) => [c.id, c.lastActivity]),
       );
+
+      const next = rows.map((row) => {
+        const otherId =
+          row.participant_a === user.id
+            ? row.participant_b
+            : row.participant_a;
+        const profile = profileById.get(otherId as string);
+        const createdAt = row.created_at as string;
+        const prior = prevById.get(row.id as string);
+        const lastActivity =
+          prior && new Date(prior).getTime() > new Date(createdAt).getTime()
+            ? prior
+            : createdAt;
+
+        return {
+          id: row.id as string,
+          otherUsername: profile?.username ?? "Unknown",
+          otherAvatarId: profile?.avatar_id ?? null,
+          lastActivity,
+        };
+      });
+
+      setConversations(sortByActivity(next));
     } catch {
       setListError("Could not load conversations.");
     } finally {
@@ -97,9 +146,140 @@ export function ChatList({
     }
   }, []);
 
+  const upsertConversationFromRow = useCallback(
+    async (row: ConversationInsert) => {
+      const userId = myUserIdRef.current;
+      if (!userId) return;
+      if (row.participant_a !== userId && row.participant_b !== userId) return;
+
+      if (conversationsRef.current.some((c) => c.id === row.id)) {
+        return;
+      }
+
+      const otherId =
+        row.participant_a === userId ? row.participant_b : row.participant_a;
+
+      const supabase = createClient();
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("username, avatar_id")
+        .eq("id", otherId)
+        .maybeSingle();
+
+      setConversations((prev) => {
+        if (prev.some((c) => c.id === row.id)) return prev;
+        return sortByActivity([
+          {
+            id: row.id,
+            otherUsername: (profile?.username as string) ?? "Unknown",
+            otherAvatarId: (profile?.avatar_id as string | null) ?? null,
+            lastActivity: row.created_at,
+          },
+          ...prev,
+        ]);
+      });
+    },
+    [],
+  );
+
+  // Initial fetch
   useEffect(() => {
     void loadConversations();
   }, [loadConversations]);
+
+  // Global inbox realtime — conversations + messages for this user (RLS still applies)
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = createClient();
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    async function setup() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user || cancelled) return;
+
+      setMyUserId(user.id);
+      myUserIdRef.current = user.id;
+
+      channel = supabase
+        .channel(`inbox:${user.id}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "conversations",
+            filter: `participant_a=eq.${user.id}`,
+          },
+          (payload) => {
+            void upsertConversationFromRow(payload.new as ConversationInsert);
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "conversations",
+            filter: `participant_b=eq.${user.id}`,
+          },
+          (payload) => {
+            void upsertConversationFromRow(payload.new as ConversationInsert);
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "messages",
+          },
+          (payload) => {
+            const row = payload.new as MessageInsert;
+            if (!row?.conversation_id || !row.created_at) return;
+
+            const known = conversationsRef.current.some(
+              (c) => c.id === row.conversation_id,
+            );
+
+            if (!known) {
+              // New thread we haven't listed yet (race with conversation INSERT) — full refresh.
+              void loadConversations();
+              return;
+            }
+
+            // Bump to top by last activity (works for open and closed chats).
+            setConversations((prev) =>
+              sortByActivity(
+                prev.map((c) =>
+                  c.id === row.conversation_id
+                    ? {
+                        ...c,
+                        lastActivity:
+                          new Date(row.created_at).getTime() >=
+                          new Date(c.lastActivity).getTime()
+                            ? row.created_at
+                            : c.lastActivity,
+                      }
+                    : c,
+                ),
+              ),
+            );
+          },
+        )
+        .subscribe();
+    }
+
+    void setup();
+
+    return () => {
+      cancelled = true;
+      if (channel) {
+        void supabase.removeChannel(channel);
+      }
+    };
+  }, [loadConversations, upsertConversationFromRow]);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
