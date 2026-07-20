@@ -24,32 +24,25 @@ export function ChatComposer({
         setDraft("");
         onSend(text);
       }}
-      className="safe-pb shrink-0 border-t border-[#2E2B28] bg-[#0F0E0D]"
+      className="safe-pb shrink-0 border-t border-[#2E2B28] bg-[#1A1816]"
     >
-      <div className="mx-auto w-full max-w-3xl px-3 py-2.5">
-        <div className="relative flex items-center">
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Message"
-            autoComplete="off"
-            className={`h-11 w-full rounded-full border border-[#2E2B28] bg-[#242220] py-2.5 text-[14px] leading-[1.4] text-[#FAFAF9] placeholder:text-[#6E6963] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C] ${
-              canSend ? "pl-4 pr-12" : "px-4"
-            }`}
-          />
-          {canSend ? (
-            <button
-              type="submit"
-              disabled={disabled}
-              aria-label="Send"
-              className="absolute right-1.5 flex h-9 w-9 items-center justify-center rounded-full bg-[#EA580C] text-white transition-colors duration-150 ease-in-out hover:bg-[#C2410C] disabled:opacity-40"
-            >
-              <SendIcon className="h-4 w-4" />
-            </button>
-          ) : null}
-        </div>
+      <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-2 py-1.5">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Message"
+          autoComplete="off"
+          className="min-h-[44px] flex-1 rounded-full border border-[#2E2B28] bg-[#242220] px-4 py-2.5 text-[16px] leading-[1.4] text-[#FAFAF9] placeholder:text-[#6E6963] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
+        />
+        <button
+          type="submit"
+          disabled={disabled || !canSend}
+          aria-label="Send"
+          className="flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-full bg-[#EA580C] text-white transition-colors duration-150 ease-in-out hover:bg-[#C2410C] disabled:opacity-30"
+        >
+          <SendIcon className="h-5 w-5" />
+        </button>
       </div>
     </form>
   );
 }
-

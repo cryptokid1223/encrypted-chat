@@ -121,7 +121,7 @@ export function SettingsPanel() {
           <Link
             href="/chats"
             aria-label="Back to chats"
-            className="flex h-10 w-10 items-center justify-center rounded-full text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9]"
+            className="flex h-11 w-11 items-center justify-center rounded-full text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9]"
           >
             <ChevronLeftIcon className="h-5 w-5" />
           </Link>

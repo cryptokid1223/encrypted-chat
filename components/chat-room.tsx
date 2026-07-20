@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeftIcon, LockIcon } from "@/components/icons";
 import { useKeyGate } from "@/components/key-gate";
 import { isSameCalendarDay, isSameMessageGroup } from "@/lib/chat";
@@ -12,6 +12,7 @@ import { hasPrivateKey, loadPrivateKey } from "@/lib/keystore";
 import { createClient } from "@/lib/supabase/client";
 import { MessageBubble } from "@/components/message-bubble";
 import { ChatComposer } from "@/components/chat-composer";
+import { useVisualViewport } from "@/hooks/useVisualViewport";
 import type {
   DecryptedMessage,
   EncryptedMessageRow,
@@ -75,6 +76,12 @@ export function ChatRoom() {
     if (!isNearBottom()) return;
     scrollToBottom();
   }, [messages, isNearBottom, scrollToBottom]);
+
+  const scrollIfNearBottom = useCallback(() => {
+    if (isNearBottom()) scrollToBottom();
+  }, [isNearBottom, scrollToBottom]);
+
+  useVisualViewport(scrollIfNearBottom);
 
   useEffect(() => {
     let cancelled = false;
@@ -413,7 +420,7 @@ export function ChatRoom() {
           <Link
             href="/chats"
             aria-label="Back to chats"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9] md:hidden"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9] md:hidden"
           >
             <ChevronLeftIcon className="h-5 w-5" />
           </Link>
@@ -433,7 +440,7 @@ export function ChatRoom() {
       <div
         ref={scrollerRef}
         className="flex min-h-0 flex-1 flex-col overflow-y-auto"
-        style={{ WebkitOverflowScrolling: "touch" }}
+        style={{ WebkitOverflowScrolling: "touch", overscrollBehavior: "none" }}
       >
         <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-3">
           {messages.length === 0 ? (

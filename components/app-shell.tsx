@@ -8,6 +8,7 @@ import { Logo } from "@/components/logo";
 import { LockIcon } from "@/components/icons";
 import { Avatar, DEFAULT_AVATAR_ID } from "@/lib/avatars";
 import { createClient } from "@/lib/supabase/client";
+import { useVisualViewport } from "@/hooks/useVisualViewport";
 
 function EmptyChatPane() {
   return (
@@ -25,6 +26,8 @@ function EmptyChatPane() {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [avatarId, setAvatarId] = useState<string>(DEFAULT_AVATAR_ID);
+
+  useVisualViewport();
 
   const isChatList = pathname === "/chats";
   const activeConversationId = pathname.startsWith("/chats/")
@@ -56,7 +59,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <div className="safe-px flex h-dvh w-full overflow-hidden bg-[#0F0E0D]">
+    <div className="safe-px flex h-app w-full overflow-hidden bg-[#0F0E0D]">
       <div className="flex h-full min-h-0 w-full max-w-[1400px]">
         <aside
           className={`flex h-full min-h-0 w-full flex-col border-[#2E2B28] bg-[#1A1816] md:w-[320px] md:shrink-0 md:border-r ${
@@ -69,7 +72,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Link
                 href="/settings"
                 aria-label="Settings"
-                className="flex h-10 w-10 items-center justify-center rounded-full transition-colors duration-150 ease-in-out hover:bg-[#242220]"
+                className="flex h-11 w-11 items-center justify-center rounded-full transition-colors duration-150 ease-in-out hover:bg-[#242220]"
               >
                 <Avatar avatarId={avatarId} size={32} />
               </Link>

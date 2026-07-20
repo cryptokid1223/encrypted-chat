@@ -172,7 +172,7 @@ export function NewChatModal({
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
-            className="h-12 w-full rounded-xl border border-[#2E2B28] bg-[#242220] px-4 text-[14px] text-[#FAFAF9] placeholder:text-[#6E6963] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
+            className="h-12 w-full rounded-xl border border-[#2E2B28] bg-[#242220] px-4 text-[16px] text-[#FAFAF9] placeholder:text-[#6E6963] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
           />
           {error ? (
             <p className="text-[13px] text-red-400" role="alert">

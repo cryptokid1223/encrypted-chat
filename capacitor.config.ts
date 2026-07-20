@@ -9,7 +9,7 @@ const config: CapacitorConfig = {
     allowNavigation: ['celesth.com', 'www.celesth.com', '*.supabase.co']
   },
   ios: {
-    contentInset: 'always'
+    contentInset: 'never'
   }
 };
 
