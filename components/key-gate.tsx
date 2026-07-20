@@ -11,6 +11,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { AuthAtmosphere } from "@/components/auth-atmosphere";
+import { KeyQrScanner } from "@/components/key-qr-scanner";
 import { Logo } from "@/components/logo";
 import {
   hasPrivateKey,
@@ -47,6 +48,7 @@ export function KeyGate({ children }: { children: ReactNode }) {
   const [loggingOut, setLoggingOut] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const [checkNotice, setCheckNotice] = useState<string | null>(null);
+  const [scanOpen, setScanOpen] = useState(false);
   const settledRef = useRef(false);
 
   const settle = useCallback(
@@ -93,26 +95,35 @@ export function KeyGate({ children }: { children: ReactNode }) {
     setReady(true);
   }, []);
 
+  const importKeyBackup = useCallback(async (text: string): Promise<boolean> => {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      setError("That file is empty.");
+      return false;
+    }
+    await savePrivateKey(trimmed);
+    const ok = await hasPrivateKey();
+    if (!ok) {
+      setHasKey(false);
+      return false;
+    }
+    setHasKey(true);
+    setFlash(null);
+    setCheckNotice(null);
+    setError(null);
+    return true;
+  }, []);
+
   async function onFileChange(file: File | null) {
     if (!file) return;
     setError(null);
     setImporting(true);
     try {
-      const text = (await file.text()).trim();
-      if (!text) {
-        setError("That file is empty.");
-        return;
-      }
-      await savePrivateKey(text);
-      const ok = await hasPrivateKey();
+      const text = await file.text();
+      const ok = await importKeyBackup(text);
       if (!ok) {
         setError("Key did not save. Try again.");
-        setHasKey(false);
-        return;
       }
-      setHasKey(true);
-      setFlash(null);
-      setCheckNotice(null);
     } catch {
       setError("Could not import that key file.");
       setHasKey(false);
@@ -120,6 +131,26 @@ export function KeyGate({ children }: { children: ReactNode }) {
       setImporting(false);
     }
   }
+
+  const handleQrDecoded = useCallback(
+    async (text: string) => {
+      setError(null);
+      setImporting(true);
+      try {
+        const ok = await importKeyBackup(text);
+        if (ok) {
+          setScanOpen(false);
+        }
+        return ok;
+      } catch {
+        setHasKey(false);
+        return false;
+      } finally {
+        setImporting(false);
+      }
+    },
+    [importKeyBackup],
+  );
 
   async function logout() {
     setLoggingOut(true);
@@ -202,6 +233,15 @@ export function KeyGate({ children }: { children: ReactNode }) {
               />
             </label>
 
+            <button
+              type="button"
+              disabled={importing}
+              onClick={() => setScanOpen(true)}
+              className="mt-3 flex min-h-[44px] w-full items-center justify-center rounded-xl border border-[#2E2B28] bg-[#242220] px-4 text-[14px] font-medium text-[#FAFAF9] transition-colors duration-150 ease-in-out hover:border-[#EA580C]/50 hover:bg-[#242220]/80 disabled:opacity-40"
+            >
+              Scan QR code
+            </button>
+
             {error ? (
               <p className="mt-3 text-[13px] text-red-400" role="alert">
                 {error}
@@ -217,6 +257,13 @@ export function KeyGate({ children }: { children: ReactNode }) {
               {loggingOut ? "Logging out…" : "Log out"}
             </button>
           </div>
+
+          {scanOpen ? (
+            <KeyQrScanner
+              onDecoded={handleQrDecoded}
+              onCancel={() => setScanOpen(false)}
+            />
+          ) : null}
         </div>
       </KeyGateContext.Provider>
     );

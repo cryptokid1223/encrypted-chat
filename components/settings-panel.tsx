@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { AvatarPicker } from "@/components/avatar-picker";
+import { KeyTransferModal } from "@/components/key-transfer-modal";
 import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 import { useProfile } from "@/components/profile-context";
 import { Avatar } from "@/lib/avatars";
@@ -110,6 +111,7 @@ export function SettingsPanel() {
   const [backupError, setBackupError] = useState<string | null>(null);
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
 
   async function updateAvatar(nextId: string) {
     if (nextId === avatarId) {
@@ -218,6 +220,12 @@ export function SettingsPanel() {
             chevron
             onClick={handleKeyBackup}
           />
+          <RowDivider />
+          <SettingsRow
+            label="Transfer key to another device"
+            chevron
+            onClick={() => setTransferOpen(true)}
+          />
         </SettingsSection>
 
         {backupMessage ? (
@@ -293,6 +301,10 @@ export function SettingsPanel() {
             </button>
           </div>
         </div>
+      ) : null}
+
+      {transferOpen ? (
+        <KeyTransferModal onClose={() => setTransferOpen(false)} />
       ) : null}
 
       {logoutOpen ? (
