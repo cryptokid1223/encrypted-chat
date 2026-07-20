@@ -426,7 +426,11 @@ export function ChatList({
               <PencilIcon className="h-[22px] w-[22px]" />
             </button>
             <Link
-              href="/settings"
+              href={
+                activeConversationId
+                  ? `/settings?returnTo=${encodeURIComponent(`/chats/${activeConversationId}`)}`
+                  : "/settings"
+              }
               aria-label="Profile and settings"
               className="pressable flex h-11 w-11 items-center justify-center"
             >

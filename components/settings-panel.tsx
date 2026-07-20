@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import { AvatarPicker } from "@/components/avatar-picker";
 import {
   ChevronLeftIcon,
@@ -48,6 +48,11 @@ async function downloadKeyBackup(): Promise<{ ok: true } | { ok: false; error: s
 
 export function SettingsPanel() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const rawReturnTo = searchParams.get("returnTo");
+  const returnTo =
+    rawReturnTo?.startsWith("/chats") ? rawReturnTo : "/chats";
+
   const { avatarId, username, setAvatarId } = useProfile();
   const [editingAvatar, setEditingAvatar] = useState(false);
   const [avatarSaving, setAvatarSaving] = useState(false);
@@ -56,6 +61,20 @@ export function SettingsPanel() {
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
+
+  const navigateBack = useCallback(() => {
+    router.push(returnTo);
+  }, [router, returnTo]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      if (editingAvatar || logoutOpen || transferOpen) return;
+      navigateBack();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [navigateBack, editingAvatar, logoutOpen, transferOpen]);
 
   async function updateAvatar(nextId: string) {
     if (nextId === avatarId) {
@@ -114,11 +133,11 @@ export function SettingsPanel() {
 
   return (
     <div className="screen-enter flex h-app min-h-0 w-full min-w-0 flex-col overflow-hidden overflow-x-hidden bg-[var(--bg)] md:h-full md:flex-1">
-      <header className="safe-pt shrink-0 border-b border-[var(--divider)] bg-[var(--bg)] md:hidden">
+      <header className="safe-pt shrink-0 border-b border-[var(--divider)] bg-[var(--bg)]">
         <div className="flex h-[52px] items-center gap-[var(--sp-1)] px-[var(--sp-2)]">
           <Link
-            href="/chats"
-            aria-label="Back to chats"
+            href={returnTo}
+            aria-label="Back"
             className="pressable flex h-11 w-11 shrink-0 items-center justify-center text-[var(--text-secondary)]"
           >
             <ChevronLeftIcon className="h-5 w-5" />
