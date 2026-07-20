@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NewChatModal } from "@/components/new-chat-modal";
-import { LockIcon, PencilIcon } from "@/components/icons";
+import { PencilIcon, SearchIcon } from "@/components/icons";
 import { useNicknames } from "@/components/nicknames-context";
+import { useProfile } from "@/components/profile-context";
 import { formatListTime } from "@/lib/chat";
 import { contactMatchesQuery, displayName } from "@/lib/display-name";
 import { Avatar, AVATARS } from "@/lib/avatars";
@@ -38,6 +39,25 @@ function sortByActivity(rows: ConversationRow[]): ConversationRow[] {
   );
 }
 
+function ListSkeleton() {
+  return (
+    <ul className="pb-[var(--sp-8)]" aria-hidden>
+      {Array.from({ length: 3 }, (_, i) => (
+        <li
+          key={i}
+          className="flex min-h-[64px] items-center gap-[var(--sp-3)] px-[var(--sp-4)] py-[var(--sp-3)]"
+        >
+          <div className="h-12 w-12 shrink-0 rounded-full bg-[var(--surface)]" />
+          <div className="min-w-0 flex-1 space-y-[var(--sp-2)]">
+            <div className="h-4 w-[55%] rounded bg-[var(--surface)]" />
+            <div className="h-3 w-[75%] rounded bg-[var(--surface)]" />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 const ConversationRowItem = memo(function ConversationRowItem({
   id,
   otherUsername,
@@ -45,6 +65,7 @@ const ConversationRowItem = memo(function ConversationRowItem({
   nickname,
   lastActivity,
   active,
+  isLast,
 }: {
   id: string;
   otherUsername: string;
@@ -52,31 +73,33 @@ const ConversationRowItem = memo(function ConversationRowItem({
   nickname: string | null;
   lastActivity: string;
   active: boolean;
+  isLast: boolean;
 }) {
   const label = displayName({ username: otherUsername, nickname });
 
   return (
     <Link
       href={`/chats/${id}`}
-      className={`flex h-16 items-center gap-3 px-3 transition-colors duration-150 ease-in-out ${
-        active
-          ? "bg-[#242220]"
-          : "hover:bg-[#242220]/70 active:bg-[#242220]"
+      className={`flex min-h-[64px] items-center gap-[var(--sp-3)] px-[var(--sp-4)] transition-colors duration-150 ease-in-out active:bg-[var(--surface)] ${
+        active ? "bg-[var(--surface)]" : ""
       }`}
     >
-      <Avatar avatarId={otherAvatarId} size={40} />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-2">
-          <p className="truncate text-[14px] font-medium text-[#FAFAF9]">
+      <Avatar avatarId={otherAvatarId} size={48} className="shrink-0" />
+      <div
+        className={`flex min-w-0 flex-1 flex-col justify-center self-stretch py-[var(--sp-3)] ${
+          isLast ? "" : "border-b border-[var(--divider)]"
+        }`}
+      >
+        <div className="flex items-baseline justify-between gap-[var(--sp-2)]">
+          <p className="truncate text-[length:var(--text-body)] font-semibold text-[var(--text-primary)]">
             {label}
           </p>
-          <span className="shrink-0 text-[11px] text-[#6E6963]">
+          <span className="shrink-0 text-[length:var(--text-caption)] text-[var(--text-secondary)]">
             {formatListTime(lastActivity)}
           </span>
         </div>
-        <p className="mt-0.5 flex items-center gap-1 text-[13px] text-[#6E6963]">
-          <LockIcon className="h-3 w-3 shrink-0" />
-          <span className="truncate">Encrypted message</span>
+        <p className="mt-0.5 truncate text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]">
+          Encrypted message
         </p>
       </div>
     </Link>
@@ -88,6 +111,7 @@ export function ChatList({
 }: {
   activeConversationId?: string | null;
 }) {
+  const { avatarId } = useProfile();
   const { nicknames, loaded: nicknamesLoaded, loadNicknames } = useNicknames();
   const [composeOpen, setComposeOpen] = useState(false);
   const [loadingList, setLoadingList] = useState(true);
@@ -95,11 +119,19 @@ export function ChatList({
   const [listError, setListError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [myUserId, setMyUserId] = useState<string | null>(null);
+  const [listScrolled, setListScrolled] = useState(false);
 
+  const scrollRef = useRef<HTMLDivElement>(null);
   const conversationsRef = useRef(conversations);
   const myUserIdRef = useRef<string | null>(null);
   const pendingActivityRef = useRef<Map<string, string>>(new Map());
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleListScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setListScrolled(el.scrollTop > 0);
+  }, []);
 
   const flushPendingActivities = useCallback(() => {
     const pending = pendingActivityRef.current;
@@ -374,77 +406,121 @@ export function ChatList({
   const showLoading = loadingList || !nicknamesLoaded;
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
-      <div className="px-3 pb-2 pt-1">
-        <input
-          type="search"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search"
-          autoComplete="off"
-          className="h-9 w-full rounded-lg border border-[#2E2B28] bg-[#242220] px-3 text-[16px] text-[#FAFAF9] placeholder:text-[#6E6963] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
-        />
-      </div>
-
-      {showLoading ? (
-        <p className="px-3 py-6 text-[13px] text-[#6E6963]">Loading…</p>
-      ) : listError ? (
-        <p className="px-3 py-6 text-[13px] text-red-400" role="alert">
-          {listError}
-        </p>
-      ) : conversations.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center px-5 pb-20 pt-6 text-center">
-          <div className="mb-4 flex -space-x-2">
-            {AVATARS.slice(0, 4).map((a) => (
-              <Avatar
-                key={a.id}
-                avatarId={a.id}
-                size={40}
-                className="ring-2 ring-[#1A1816]"
-              />
-            ))}
+    <div className="relative flex min-h-0 flex-1 flex-col bg-[var(--bg)]">
+      <header
+        className={`safe-pt shrink-0 bg-[var(--bg)] transition-[border-color] duration-150 ${
+          listScrolled ? "border-b border-[var(--divider)]" : "border-b border-transparent"
+        }`}
+      >
+        <div className="flex items-center justify-between px-[var(--sp-4)] pb-[var(--sp-2)] pt-[var(--sp-2)]">
+          <h1 className="text-[length:var(--text-title-lg)] font-bold leading-tight text-[var(--text-primary)]">
+            Chats
+          </h1>
+          <div className="flex items-center">
+            <button
+              type="button"
+              onClick={() => setComposeOpen(true)}
+              aria-label="New message"
+              className="flex h-11 w-11 items-center justify-center text-[var(--text-primary)] transition-opacity duration-150 ease-in-out active:opacity-70"
+            >
+              <PencilIcon className="h-[22px] w-[22px]" />
+            </button>
+            <Link
+              href="/settings"
+              aria-label="Profile and settings"
+              className="flex h-11 w-11 items-center justify-center active:opacity-70"
+            >
+              <Avatar avatarId={avatarId} size={32} />
+            </Link>
           </div>
-          <p className="text-[14px] font-medium text-[#FAFAF9]">No chats yet</p>
-          <p className="mt-1 max-w-[220px] text-[13px] leading-[1.4] text-[#6E6963]">
-            Start a private conversation by username.
-          </p>
-          <button
-            type="button"
-            onClick={() => setComposeOpen(true)}
-            className="mt-4 flex h-10 min-w-[140px] items-center justify-center rounded-xl bg-[#EA580C] px-5 text-[13px] font-medium text-white transition-colors duration-150 ease-in-out hover:bg-[#C2410C]"
-          >
-            Start a chat
-          </button>
         </div>
-      ) : filteredConversations.length === 0 ? (
-        <p className="px-3 py-6 text-[13px] text-[#6E6963]">No matches.</p>
-      ) : (
-        <ul className="min-h-0 flex-1 overflow-y-auto pb-20">
-          {filteredConversations.map((c) => (
-            <li key={c.id}>
-              <ConversationRowItem
-                id={c.id}
-                otherUsername={c.otherUsername}
-                otherAvatarId={c.otherAvatarId}
-                nickname={nicknames[c.otherUserId] ?? null}
-                lastActivity={c.lastActivity}
-                active={activeConversationId === c.id}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
+      </header>
 
-      {!showLoading ? (
-        <button
-          type="button"
-          onClick={() => setComposeOpen(true)}
-          aria-label="New chat"
-          className="absolute bottom-4 right-4 flex h-12 w-12 items-center justify-center rounded-full border border-[#2E2B28] bg-[#EA580C] text-white transition-colors duration-150 ease-in-out hover:bg-[#C2410C]"
-        >
-          <PencilIcon className="h-5 w-5" />
-        </button>
+      {!showLoading && conversations.length > 0 ? (
+        <div className="shrink-0 px-[var(--sp-4)] py-[var(--sp-2)]">
+          <label className="relative block">
+            <SearchIcon className="pointer-events-none absolute left-[var(--sp-3)] top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-secondary)]" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search"
+              autoComplete="off"
+              className="h-9 w-full rounded-[var(--radius-input)] bg-[var(--surface)] pl-[calc(var(--sp-3)+1.25rem)] pr-[var(--sp-3)] text-[length:var(--text-body)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none"
+            />
+          </label>
+        </div>
       ) : null}
+
+      <div
+        ref={scrollRef}
+        onScroll={handleListScroll}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+      >
+        {showLoading ? (
+          <ListSkeleton />
+        ) : (
+          <>
+            {listError ? (
+              <p
+                className="px-[var(--sp-4)] py-[var(--sp-6)] text-[length:var(--text-secondary-size)] text-[var(--destructive)]"
+                role="alert"
+              >
+                {listError}
+              </p>
+            ) : conversations.length === 0 ? (
+              <div
+                className="flex flex-col items-center px-[var(--sp-5)] pb-[var(--sp-8)] text-center"
+                style={{ paddingTop: "min(40vh, 280px)" }}
+              >
+                <div className="mb-[var(--sp-4)] flex h-16 -space-x-2">
+                  {AVATARS.slice(0, 4).map((a) => (
+                    <Avatar
+                      key={a.id}
+                      avatarId={a.id}
+                      size={32}
+                      className="ring-2 ring-[var(--bg)]"
+                    />
+                  ))}
+                </div>
+                <p className="text-[length:var(--text-title)] font-semibold text-[var(--text-primary)]">
+                  No chats yet
+                </p>
+                <p className="mt-[var(--sp-1)] max-w-[240px] text-[length:var(--text-secondary-size)] leading-[1.4] text-[var(--text-secondary)]">
+                  Start a private conversation by username.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setComposeOpen(true)}
+                  className="mt-[var(--sp-4)] flex h-11 items-center justify-center rounded-[var(--radius-input)] bg-[var(--accent)] px-[var(--sp-6)] text-[length:var(--text-secondary-size)] font-medium text-white transition-colors duration-150 ease-in-out active:bg-[var(--accent-pressed)]"
+                >
+                  New message
+                </button>
+              </div>
+            ) : filteredConversations.length === 0 ? (
+              <p className="px-[var(--sp-4)] py-[var(--sp-6)] text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]">
+                No matches.
+              </p>
+            ) : (
+              <ul className="pb-[var(--sp-8)]">
+                {filteredConversations.map((c, index) => (
+                  <li key={c.id}>
+                    <ConversationRowItem
+                      id={c.id}
+                      otherUsername={c.otherUsername}
+                      otherAvatarId={c.otherAvatarId}
+                      nickname={nicknames[c.otherUserId] ?? null}
+                      lastActivity={c.lastActivity}
+                      active={activeConversationId === c.id}
+                      isLast={index === filteredConversations.length - 1}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </div>
 
       <NewChatModal open={composeOpen} onClose={() => setComposeOpen(false)} />
     </div>

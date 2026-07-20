@@ -17,20 +17,24 @@ export function formatMessageTime(iso: string): string {
   }
 }
 
-/** Sidebar relative time — "6:40 PM" today, else short date. */
+/** Sidebar relative time — time today, "Yesterday", else short date. */
 export function formatListTime(iso: string): string {
   try {
     const d = new Date(iso);
     const now = new Date();
-    const sameDay =
-      d.getFullYear() === now.getFullYear() &&
-      d.getMonth() === now.getMonth() &&
-      d.getDate() === now.getDate();
-    if (sameDay) {
+    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startMsg = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const diffDays = Math.round(
+      (startToday.getTime() - startMsg.getTime()) / (24 * 60 * 60 * 1000),
+    );
+    if (diffDays === 0) {
       return d.toLocaleTimeString(undefined, {
         hour: "numeric",
         minute: "2-digit",
       });
+    }
+    if (diffDays === 1) {
+      return "Yesterday";
     }
     return d.toLocaleDateString(undefined, {
       month: "short",

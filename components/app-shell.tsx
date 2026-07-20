@@ -1,13 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode } from "react";
 import { ChatList } from "@/components/chat-list";
-import { Logo } from "@/components/logo";
 import { LockIcon } from "@/components/icons";
-import { useProfile } from "@/components/profile-context";
-import { Avatar } from "@/lib/avatars";
 
 function EmptyChatPane() {
   return (
@@ -24,7 +20,6 @@ function EmptyChatPane() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { avatarId } = useProfile();
 
   const isChatList = pathname === "/chats";
   const isSettings = pathname === "/settings";
@@ -36,23 +31,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="safe-px flex h-app w-full overflow-hidden bg-[#0F0E0D]">
       <div className="flex h-full min-h-0 w-full max-w-[1400px]">
         <aside
-          className={`relative flex h-full min-h-0 w-full flex-col border-[#2E2B28] bg-[#1A1816] md:w-[320px] md:shrink-0 md:border-r ${
+          className={`relative flex h-full min-h-0 w-full flex-col bg-[var(--bg)] md:w-[320px] md:shrink-0 md:border-r md:border-[var(--divider)] ${
             isChatList ? "flex" : "hidden md:flex"
           }`}
         >
-          <header className="safe-pt shrink-0 border-b border-transparent">
-            <div className="flex h-12 items-center justify-between px-3">
-              <Logo href="/chats" size="sm" markSize={20} />
-              <Link
-                href="/settings"
-                aria-label="Profile and settings"
-                className="flex h-11 w-11 items-center justify-center rounded-full transition-colors duration-150 ease-in-out hover:bg-[#242220] active:bg-[#242220]"
-              >
-                <Avatar avatarId={avatarId} size={32} />
-              </Link>
-            </div>
-          </header>
-
           <ChatList activeConversationId={activeConversationId} />
         </aside>
 

@@ -24,6 +24,26 @@ export function LockIcon(props: IconProps) {
   );
 }
 
+export function SearchIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
+      <circle
+        cx="11"
+        cy="11"
+        r="6.25"
+        stroke="currentColor"
+        strokeWidth="1.75"
+      />
+      <path
+        d="m16.5 16.5 5 5"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export function PencilIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
