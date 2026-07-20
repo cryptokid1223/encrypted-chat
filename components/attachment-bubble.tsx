@@ -2,8 +2,9 @@
 
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { InlineSpinner } from "@/components/inline-spinner";
-import { PhotoIcon, PlayIcon, VideoIcon, MicIcon } from "@/components/icons";
+import { PhotoIcon, PlayIcon, VideoIcon } from "@/components/icons";
 import { PhotoViewer } from "@/components/photo-viewer";
+import { VoiceMessageBubble } from "@/components/voice-message-bubble";
 import type { AttachmentMeta } from "@/lib/fileCrypto";
 import { attachmentDisplaySize, formatDurationMs } from "@/lib/messageContent";
 import {
@@ -491,49 +492,6 @@ const VideoAttachmentContent = memo(function VideoAttachmentContent({
   );
 });
 
-const AudioAttachmentContent = memo(function AudioAttachmentContent({
-  meta,
-  isMine,
-  isPending,
-}: {
-  meta: AttachmentMeta;
-  isMine: boolean;
-  isPending?: boolean;
-}) {
-  return (
-    <div
-      className={`flex min-w-[180px] items-center gap-[var(--sp-3)] px-4 py-3 ${
-        isPending ? "opacity-60" : ""
-      }`}
-    >
-      <MicIcon
-        className={`h-5 w-5 shrink-0 ${isMine ? "text-white" : "text-[var(--text-secondary)]"}`}
-      />
-      <span
-        className={`flex-1 text-[length:var(--text-body)] font-medium ${
-          isMine ? "text-white" : "text-[var(--text-primary)]"
-        }`}
-      >
-        Voice message
-      </span>
-      {meta.durationMs ? (
-        <span
-          className={`shrink-0 text-[length:var(--text-secondary-size)] tabular-nums ${
-            isMine ? "text-white/80" : "text-[var(--text-secondary)]"
-          }`}
-        >
-          {formatDurationMs(meta.durationMs)}
-        </span>
-      ) : null}
-      {isPending ? (
-        <InlineSpinner
-          className={`h-4 w-4 shrink-0 ${isMine ? "text-white" : "text-[var(--text-primary)]"}`}
-        />
-      ) : null}
-    </div>
-  );
-});
-
 export const AttachmentBubble = memo(function AttachmentBubble({
   meta,
   isMine,
@@ -549,11 +507,7 @@ export const AttachmentBubble = memo(function AttachmentBubble({
 }) {
   if (meta.kind === "audio") {
     return (
-      <AudioAttachmentContent
-        meta={meta}
-        isMine={isMine}
-        isPending={isPending}
-      />
+      <VoiceMessageBubble meta={meta} isMine={isMine} isPending={isPending} />
     );
   }
 

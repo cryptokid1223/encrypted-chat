@@ -13,6 +13,7 @@ import { encryptFile } from "@/lib/fileCrypto";
 import { uploadEncryptedAttachment } from "@/lib/attachmentStorage";
 import { ImageTooLargeError, processImageForSend, processVideoForSend, VideoTooLargeError, VideoUnsupportedError } from "@/lib/imageProcessing";
 import { buildAttachmentBody } from "@/lib/messageContent";
+import { stopVoicePlayback } from "@/lib/voicePlayer";
 import { Avatar } from "@/lib/avatars";
 import {
   displayName,
@@ -130,6 +131,7 @@ export function ChatRoom() {
     pendingFileRef.current.clear();
     pendingAudioRef.current.clear();
     return () => {
+      stopVoicePlayback();
       for (const m of messagesRef.current) {
         if (m.localPreviewUrl) {
           URL.revokeObjectURL(m.localPreviewUrl);

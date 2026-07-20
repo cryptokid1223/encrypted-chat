@@ -1,4 +1,5 @@
 import { decryptFile, type AttachmentMeta } from "@/lib/fileCrypto";
+import { stopVoicePlayback } from "@/lib/voicePlayer";
 import { createClient } from "@/lib/supabase/client";
 
 const IMAGE_MAX_ENTRIES = 40;
@@ -212,6 +213,18 @@ export async function getDecryptedVideoUrl(
   return getDecryptedBlobUrl(metaToRef(meta), "video");
 }
 
+/** Returns a blob object URL for a decrypted audio attachment (image LRU cache). */
+export async function getDecryptedAudioUrl(
+  meta: AttachmentMeta,
+): Promise<string> {
+  return getDecryptedBlobUrl(metaToRef(meta), "image");
+}
+
+/** Returns a cached audio blob URL synchronously, if available. */
+export function peekDecryptedAudioUrl(path: string): string | undefined {
+  return peekUrl("image", path);
+}
+
 /** Returns a blob object URL for an encrypted video thumbnail, if present. */
 export async function getDecryptedThumbUrl(
   meta: AttachmentMeta,
@@ -242,8 +255,16 @@ export function retryDecryptedVideoUrl(
   return retryDecryptedBlobUrl(metaToRef(meta), "video");
 }
 
+/** Clears a failed audio entry and retries fetch + decrypt. */
+export function retryDecryptedAudioUrl(
+  meta: AttachmentMeta,
+): Promise<string> {
+  return retryDecryptedBlobUrl(metaToRef(meta), "image");
+}
+
 /** Revoke all cached blob URLs — call on logout. */
 export function revokeAllAttachmentUrls(): void {
+  stopVoicePlayback();
   for (const entry of imageCache.values()) {
     if (entry.status === "resolved") {
       URL.revokeObjectURL(entry.url);

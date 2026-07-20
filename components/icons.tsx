@@ -321,6 +321,14 @@ export function PlayIcon(props: IconProps) {
   );
 }
 
+export function PauseIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
+      <path d="M8 6h3v12H8V6zm5 0h3v12h-3V6z" fill="currentColor" />
+    </svg>
+  );
+}
+
 export function VideoIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
