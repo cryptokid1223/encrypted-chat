@@ -1,43 +1,35 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ChevronLeftIcon } from "@/components/icons";
 import { orderedParticipants } from "@/lib/chat";
 import { createClient } from "@/lib/supabase/client";
 
-export function NewChatModal({
-  open,
-  onClose,
-}: {
-  open: boolean;
-  onClose: () => void;
-}) {
+function NewChatSheet({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [username, setUsername] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (open) {
-      setUsername("");
-      setError(null);
-      setBusy(false);
-      const t = window.setTimeout(() => inputRef.current?.focus(), 50);
-      return () => window.clearTimeout(t);
-    }
-  }, [open]);
+  const dismiss = useCallback(() => {
+    inputRef.current?.blur();
+    onClose();
+  }, [onClose]);
 
   useEffect(() => {
-    if (!open) return;
+    const id = requestAnimationFrame(() => inputRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") dismiss();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
+  }, [dismiss]);
 
   async function startChat(e: React.FormEvent) {
     e.preventDefault();
@@ -100,7 +92,7 @@ export function NewChatModal({
       }
 
       if (existing) {
-        onClose();
+        dismiss();
         router.push(`/chats/${existing.id}`);
         return;
       }
@@ -120,7 +112,7 @@ export function NewChatModal({
           .maybeSingle();
 
         if (raced) {
-          onClose();
+          dismiss();
           router.push(`/chats/${raced.id}`);
           return;
         }
@@ -129,7 +121,7 @@ export function NewChatModal({
         return;
       }
 
-      onClose();
+      dismiss();
       router.push(`/chats/${created.id}`);
     } catch {
       setError("Something went wrong. Try again.");
@@ -139,64 +131,89 @@ export function NewChatModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+    <div className="absolute inset-0 z-50 flex flex-col justify-end md:items-center md:justify-center md:p-4">
       <button
         type="button"
-        aria-label="Close"
+        aria-label="Close new chat"
         className="absolute inset-0 bg-black/60 transition-opacity duration-150 ease-in-out"
-        onClick={onClose}
+        onClick={dismiss}
       />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-chat-title"
-        className="safe-pb relative z-10 w-full max-w-lg rounded-t-2xl border border-[#2E2B28] bg-[#1A1816] p-5 sm:rounded-2xl"
+        className="safe-pb relative flex max-h-[min(85%,100%)] w-full max-w-lg flex-col rounded-t-2xl border border-[#2E2B28] bg-[#1A1816] md:max-h-[90%] md:rounded-2xl"
       >
-        <p
-          id="new-chat-title"
-          className="text-[15px] font-semibold text-[#FAFAF9]"
-        >
-          New chat
-        </p>
-        <p className="mt-1 text-[13px] text-[#6E6963]">
-          Enter their exact Celesth username
-        </p>
+        <div className="flex shrink-0 items-center gap-1 border-b border-[#2E2B28] px-2 py-1">
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={dismiss}
+            className="flex h-11 w-11 items-center justify-center rounded-full text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9]"
+          >
+            <ChevronLeftIcon className="h-5 w-5 md:hidden" />
+            <span className="hidden text-[18px] leading-none md:inline">×</span>
+          </button>
+          <p
+            id="new-chat-title"
+            className="text-[15px] font-semibold text-[#FAFAF9]"
+          >
+            New chat
+          </p>
+        </div>
 
-        <form onSubmit={startChat} className="mt-4 space-y-3">
-          <input
-            ref={inputRef}
-            value={username}
-            onChange={(e) => setUsername(e.target.value.toLowerCase())}
-            placeholder="username"
-            autoComplete="off"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            className="h-12 w-full rounded-xl border border-[#2E2B28] bg-[#242220] px-4 text-[16px] text-[#FAFAF9] placeholder:text-[#6E6963] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
-          />
-          {error ? (
-            <p className="text-[13px] text-red-400" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <div className="flex gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="h-11 flex-1 rounded-xl px-4 text-[13px] font-medium text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9]"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={busy || !username.trim()}
-              className="h-11 flex-1 rounded-xl bg-[#EA580C] px-4 text-[13px] font-medium text-white transition-colors duration-150 ease-in-out hover:bg-[#C2410C] disabled:opacity-40"
-            >
-              {busy ? "Opening…" : "Chat"}
-            </button>
-          </div>
-        </form>
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          <p className="text-[13px] text-[#6E6963]">
+            Enter their exact Celesth username
+          </p>
+
+          <form onSubmit={startChat} className="mt-4 space-y-3">
+            <input
+              ref={inputRef}
+              value={username}
+              onChange={(e) => setUsername(e.target.value.toLowerCase())}
+              placeholder="username"
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              className="h-12 w-full rounded-xl border border-[#2E2B28] bg-[#242220] px-4 text-[16px] text-[#FAFAF9] placeholder:text-[#6E6963] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
+            />
+            {error ? (
+              <p className="text-[13px] text-red-400" role="alert">
+                {error}
+              </p>
+            ) : null}
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={dismiss}
+                className="flex h-11 min-h-[44px] flex-1 items-center justify-center rounded-xl px-4 text-[13px] font-medium text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9]"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={busy || !username.trim()}
+                className="flex h-11 min-h-[44px] flex-1 items-center justify-center rounded-xl bg-[#EA580C] px-4 text-[13px] font-medium text-white transition-colors duration-150 ease-in-out hover:bg-[#C2410C] disabled:opacity-40"
+              >
+                {busy ? "Opening…" : "Chat"}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );
+}
+
+export function NewChatModal({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+  return <NewChatSheet onClose={onClose} />;
 }
