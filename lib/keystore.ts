@@ -50,7 +50,7 @@ type SecureStorage = {
     key: string;
     value: string;
   }) => Promise<{ value: boolean }>;
-  remove: (options: { key: string }) => Promise<{ value: boolean }>;
+  remove?: (options: { key: string }) => Promise<{ value: boolean }>;
 };
 
 function storageKeyForUser(userId: string): string {
@@ -83,18 +83,76 @@ async function withNativeTimeout<T>(
   }
 }
 
-/** Never hangs/throws — null if the plugin cannot be loaded in time. */
+function isSecureStoragePlugin(value: unknown): value is SecureStorage {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as SecureStorage;
+  // Capacitor Proxies expose methods as functions when read.
+  return (
+    typeof candidate.get === "function" && typeof candidate.set === "function"
+  );
+}
+
+/**
+ * Resolve SecureStoragePlugin on native.
+ * Prefer Capacitor registerPlugin(name) — survives bundler interop that can make
+ * `import("capacitor-secure-storage-plugin")` yield an empty/broken module object.
+ * Fall back to the package's documented named export.
+ */
+async function resolveSecureStoragePlugin(): Promise<SecureStorage> {
+  // 1) Bridge by plugin name (works on iOS/Android regardless of ESM interop).
+  try {
+    const { registerPlugin } = await import("@capacitor/core");
+    const viaRegister = registerPlugin<SecureStorage>("SecureStoragePlugin");
+    if (isSecureStoragePlugin(viaRegister)) {
+      return viaRegister;
+    }
+  } catch {
+    // Continue to package import.
+  }
+
+  // 2) Documented package import (static-export shape, with default-interop fallback).
+  const mod = await import("capacitor-secure-storage-plugin");
+  const viaNamed = mod.SecureStoragePlugin;
+  if (isSecureStoragePlugin(viaNamed)) {
+    return viaNamed;
+  }
+
+  const viaDefault = (mod as { default?: unknown }).default;
+  if (isSecureStoragePlugin(viaDefault)) {
+    return viaDefault;
+  }
+  if (
+    viaDefault &&
+    typeof viaDefault === "object" &&
+    isSecureStoragePlugin(
+      (viaDefault as { SecureStoragePlugin?: unknown }).SecureStoragePlugin,
+    )
+  ) {
+    return (viaDefault as { SecureStoragePlugin: SecureStorage })
+      .SecureStoragePlugin;
+  }
+
+  throw new Error(
+    "SecureStoragePlugin missing get/set after registerPlugin + package import",
+  );
+}
+
+/**
+ * Never hangs — null if the plugin cannot be loaded in time.
+ * On native, failure is logged as an error (Keychain path must not silently die).
+ */
 async function getSecureStorage(): Promise<SecureStorage | null> {
   if (!IS_NATIVE_PLATFORM) return null;
-  return withNativeTimeout("SecureStoragePlugin import", async () => {
-    // Exact package name required by Capacitor plugin registration.
-    const mod = await import("capacitor-secure-storage-plugin");
-    const plugin = mod.SecureStoragePlugin;
-    if (!plugin?.get || !plugin?.set || !plugin?.remove) {
-      throw new Error("SecureStoragePlugin missing get/set/remove");
-    }
-    return plugin as SecureStorage;
-  });
+  const plugin = await withNativeTimeout(
+    "SecureStoragePlugin import",
+    resolveSecureStoragePlugin,
+  );
+  if (!plugin) {
+    console.error(
+      "[keystore] CRITICAL: SecureStoragePlugin unavailable on native — Keychain path is dead; falling back to IndexedDB. Keys may not load.",
+    );
+  }
+  return plugin;
 }
 
 // ── IndexedDB (web / fallback) ───────────────────────────────────
@@ -207,9 +265,16 @@ async function secureSave(
 }
 
 async function secureRemove(plugin: SecureStorage, slot: string): Promise<void> {
+  if (typeof plugin.remove !== "function") {
+    console.warn(
+      "[keystore] SecureStoragePlugin.remove unavailable; skipping Keychain delete for",
+      slot,
+    );
+    return;
+  }
   await withNativeTimeout("SecureStoragePlugin.remove", async () => {
     try {
-      await plugin.remove({ key: slot });
+      await plugin.remove!({ key: slot });
     } catch {
       // Missing key is fine.
     }

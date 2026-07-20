@@ -23,6 +23,7 @@ import { Avatar, AVATARS, DEFAULT_AVATAR_ID } from "@/lib/avatars";
 import { generateKeyPair } from "@/lib/crypto";
 import { savePrivateKey } from "@/lib/keystore";
 import { createClient } from "@/lib/supabase/client";
+import { upsertWrappedKeyForUser, markWrapSetupComplete } from "@/lib/wrappedKeys";
 
 type FieldErrors = {
   username?: string | null;
@@ -137,6 +138,17 @@ export function SignupForm() {
       // The private key is stored only on this device (namespaced by user id).
       // It must NEVER be sent to Supabase or any server.
       await savePrivateKey(privateKey, signUpData.user.id);
+
+      // Best-effort password wrap for cross-device restore. Failure is non-fatal —
+      // the chats-list ensureWrappedKey banner can retry later.
+      const wrapResult = await upsertWrappedKeyForUser(
+        signUpData.user.id,
+        privateKey,
+        password,
+      );
+      if (wrapResult.ok) {
+        markWrapSetupComplete(signUpData.user.id);
+      }
 
       const { error: profileError } = await supabase.from("profiles").insert({
         id: signUpData.user.id,

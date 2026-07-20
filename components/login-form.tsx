@@ -11,6 +11,7 @@ import {
 } from "@/components/auth-ui";
 import { usernameToAuthEmail, validateUsername } from "@/lib/auth-email";
 import { createClient } from "@/lib/supabase/client";
+import { tryRestoreKeyFromPassword } from "@/lib/wrappedKeys";
 
 export function LoginForm() {
   const router = useRouter();
@@ -19,6 +20,7 @@ export function LoginForm() {
   const [usernameError, setUsernameError] = useState<string | null>(null);
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -34,19 +36,30 @@ export function LoginForm() {
     setBusy(true);
     try {
       const supabase = createClient();
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: usernameToAuthEmail(username),
-        password,
-      });
+      const { data: signInData, error: signInError } =
+        await supabase.auth.signInWithPassword({
+          email: usernameToAuthEmail(username),
+          password,
+        });
 
-      if (signInError) {
+      if (signInError || !signInData.user) {
         setGeneralError("Invalid username or password.");
         return;
       }
 
+      const userId = signInData.user.id;
+
+      // Transparent password restore when this device has no key yet.
+      // already_present / restored → enter app with a key.
+      // missing_row / failed → KeyGate shows the existing QR/file restore screen.
+      setRestoring(true);
+      await tryRestoreKeyFromPassword(userId, password);
+      setRestoring(false);
+
       router.replace("/chats");
       router.refresh();
     } catch {
+      setRestoring(false);
       setGeneralError("Something went wrong. Try again.");
     } finally {
       setBusy(false);
@@ -92,7 +105,11 @@ export function LoginForm() {
 
       <div className="mt-[var(--sp-6)]">
         <AuthPrimaryButton disabled={busy} loading={busy}>
-          {busy ? "Logging in…" : "Log in"}
+          {restoring
+            ? "Restoring your messages…"
+            : busy
+              ? "Logging in…"
+              : "Log in"}
         </AuthPrimaryButton>
         {generalError ? (
           <p

@@ -14,6 +14,7 @@ import { hasPrivateKey, loadPrivateKey } from "@/lib/keystore";
 import type { EncryptedMessageRow } from "@/lib/message-decrypt";
 import { fetchMyGroups, fetchGroupForInbox, type GroupRow } from "@/lib/groups";
 import { consumeGroupNotice } from "@/lib/groupNotice";
+import { WrapSetupBanner } from "@/components/wrap-setup-banner";
 import {
   fetchGroupPreview,
   previewFromGroupMessageRow,
@@ -876,6 +877,8 @@ export function ChatList({
           </p>
         </div>
       ) : null}
+
+      {myUserId ? <WrapSetupBanner userId={myUserId} /> : null}
 
       {!showLoading && inboxItems.length > 0 ? (
         <div className="shrink-0 px-[var(--sp-4)] py-[var(--sp-2)]">

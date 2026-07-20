@@ -245,6 +245,10 @@ export function SettingsPanel() {
               isLast
             />
           </SettingsSection>
+          <p className="mt-[var(--sp-2)] px-[var(--sp-4)] text-[length:var(--text-caption)] leading-[1.4] text-[var(--text-secondary)]">
+            Usually not needed — logging in with your password restores your
+            messages.
+          </p>
 
           {backupMessage ? (
             <p
