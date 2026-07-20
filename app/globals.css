@@ -102,6 +102,19 @@ label {
   padding-bottom: calc(0.75rem + var(--safe-bottom));
 }
 
+/* Home-indicator padding is redundant while the keyboard covers the bottom edge. */
+html.kb-open .safe-pb {
+  padding-bottom: 0.75rem;
+}
+
+.composer-bar {
+  padding-bottom: calc(0.75rem + var(--safe-bottom));
+}
+
+html.kb-open .composer-bar {
+  padding-bottom: 0;
+}
+
 .safe-px {
   padding-left: var(--safe-left);
   padding-right: var(--safe-right);

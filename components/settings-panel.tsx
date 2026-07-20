@@ -169,8 +169,8 @@ export function SettingsPanel() {
   const displayUsername = username ? `@${username}` : "";
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-y-auto bg-[#0F0E0D]">
-      <div className="safe-pt sticky top-0 z-10 shrink-0 border-b border-[#2E2B28] bg-[#1A1816] md:hidden">
+    <div className="flex h-app min-h-0 w-full flex-col overflow-hidden bg-[#0F0E0D] md:h-full md:flex-1">
+      <header className="safe-pt shrink-0 border-b border-[#2E2B28] bg-[#1A1816] md:hidden">
         <div className="flex h-12 items-center gap-1 px-2">
           <Link
             href="/chats"
@@ -183,9 +183,10 @@ export function SettingsPanel() {
             Profile
           </span>
         </div>
-      </div>
+      </header>
 
-      <div className="safe-pb mx-auto w-full max-w-xl flex-1 space-y-6 p-4 sm:p-6">
+      <div className="safe-pb min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-xl space-y-6 p-4 sm:p-6">
         <div className="flex flex-col items-center pt-4 md:pt-6">
           <button
             type="button"
@@ -255,6 +256,7 @@ export function SettingsPanel() {
             disabled={loggingOut}
           />
         </div>
+      </div>
       </div>
 
       {editingAvatar ? (

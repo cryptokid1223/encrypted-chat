@@ -435,7 +435,7 @@ export function ChatRoom() {
   const otherHasNickname = hasNickname(otherIdentity);
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-1 flex-col bg-[#0F0E0D]">
+    <div className="flex h-app min-h-0 w-full flex-col bg-[#0F0E0D] md:h-full md:flex-1">
       <div className="safe-pt shrink-0 border-b border-[#2E2B28] bg-[#1A1816]">
         <div className="flex h-14 items-center gap-2.5 px-3">
           <Link

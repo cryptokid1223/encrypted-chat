@@ -10,6 +10,11 @@ const config: CapacitorConfig = {
   },
   ios: {
     contentInset: 'never'
+  },
+  plugins: {
+    Keyboard: {
+      resize: 'none'
+    }
   }
 };
 

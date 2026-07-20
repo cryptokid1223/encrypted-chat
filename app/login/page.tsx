@@ -4,7 +4,7 @@ import { LoginForm } from "@/components/login-form";
 
 export default function LoginPage() {
   return (
-    <div className="relative flex h-full min-h-0 flex-1 justify-center overflow-y-auto bg-[#0F0E0D] px-4 py-8 sm:py-10">
+    <div className="relative flex h-app min-h-0 flex-1 flex-col overflow-y-auto bg-[#0F0E0D] px-4 py-8 sm:py-10">
       <AuthAtmosphere />
       <div className="safe-pb relative z-10 my-auto w-full max-w-lg">
         <div className="rounded-3xl border border-[#2E2B28] bg-[#1A1816] p-8">

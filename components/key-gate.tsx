@@ -177,7 +177,7 @@ export function KeyGate({ children }: { children: ReactNode }) {
   if (!hasKey) {
     return (
       <KeyGateContext.Provider value={{ hasKey: false, requireKeyImport }}>
-        <div className="safe-px relative flex h-full min-h-0 flex-1 justify-center overflow-y-auto bg-[#0F0E0D] p-4">
+        <div className="safe-px relative flex h-app min-h-0 flex-1 flex-col overflow-y-auto bg-[#0F0E0D] p-4">
           {flash ? (
             <div
               role="status"
@@ -187,7 +187,7 @@ export function KeyGate({ children }: { children: ReactNode }) {
             </div>
           ) : null}
           <AuthAtmosphere />
-          <div className="safe-pb safe-pt relative z-10 my-auto w-full max-w-md rounded-3xl border border-[#2E2B28] bg-[#1A1816] p-8">
+          <div className="safe-pb relative z-10 my-auto w-full max-w-md rounded-3xl border border-[#2E2B28] bg-[#1A1816] p-8">
             <div className="flex justify-center">
               <Logo size="lg" markSize={28} />
             </div>

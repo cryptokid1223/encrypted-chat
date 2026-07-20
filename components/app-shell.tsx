@@ -8,7 +8,6 @@ import { Logo } from "@/components/logo";
 import { LockIcon } from "@/components/icons";
 import { useProfile } from "@/components/profile-context";
 import { Avatar } from "@/lib/avatars";
-import { useVisualViewport } from "@/hooks/useVisualViewport";
 
 function EmptyChatPane() {
   return (
@@ -26,8 +25,6 @@ function EmptyChatPane() {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { avatarId } = useProfile();
-
-  useVisualViewport();
 
   const isChatList = pathname === "/chats";
   const isSettings = pathname === "/settings";
@@ -60,7 +57,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </aside>
 
         <main
-          className={`min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#0F0E0D] ${
+          className={`flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#0F0E0D] ${
             isChatList && !isSettings ? "hidden md:flex" : "flex"
           }`}
         >

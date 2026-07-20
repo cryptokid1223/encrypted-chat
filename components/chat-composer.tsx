@@ -24,7 +24,7 @@ export function ChatComposer({
         setDraft("");
         onSend(text);
       }}
-      className="safe-pb shrink-0 border-t border-[#2E2B28] bg-[#1A1816]"
+      className="composer-bar shrink-0 border-t border-[#2E2B28] bg-[#1A1816]"
     >
       <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-2 py-1.5">
         <input

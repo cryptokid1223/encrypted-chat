@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import { VisualViewportRoot } from "@/components/visual-viewport-root";
 import "./globals.css";
 
 const inter = Inter({
@@ -29,7 +30,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} h-full antialiased`}>
       <body className="flex h-full w-full flex-col overflow-hidden bg-[#0F0E0D] font-sans text-[#FAFAF9]">
-        {children}
+        <VisualViewportRoot>{children}</VisualViewportRoot>
       </body>
     </html>
   );

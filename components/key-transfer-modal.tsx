@@ -111,15 +111,15 @@ export function KeyTransferModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col bg-[#0F0E0D] md:items-center md:justify-center md:bg-black/60 md:p-4">
+    <div className="fixed inset-x-0 top-0 z-[70] flex h-app flex-col md:inset-0 md:items-center md:justify-center md:bg-black/60 md:p-4">
       <button
         type="button"
         aria-label="Close key transfer"
         className="absolute inset-0 hidden md:block"
         onClick={handleClose}
       />
-      <div className="safe-pt relative flex h-full w-full flex-col overflow-y-auto bg-[#0F0E0D] md:h-auto md:max-h-[90dvh] md:max-w-md md:rounded-2xl md:border md:border-[#2E2B28] md:bg-[#1A1816]">
-        <div className="safe-pt sticky top-0 z-10 shrink-0 border-b border-[#2E2B28] bg-[#1A1816] md:rounded-t-2xl">
+      <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#0F0E0D] md:h-auto md:max-h-[90dvh] md:max-w-md md:rounded-2xl md:border md:border-[#2E2B28] md:bg-[#1A1816]">
+        <header className="safe-pt shrink-0 border-b border-[#2E2B28] bg-[#1A1816] md:rounded-t-2xl">
           <div className="flex h-12 items-center gap-1 px-2">
             <button
               type="button"
@@ -133,9 +133,10 @@ export function KeyTransferModal({ onClose }: { onClose: () => void }) {
               Transfer key
             </span>
           </div>
-        </div>
+        </header>
 
-        <div className="safe-pb mx-auto flex w-full max-w-md flex-1 flex-col p-6">
+        <div className="safe-pb min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto flex w-full max-w-md flex-col p-6">
           {step === "warning" ? (
             <div className="my-auto flex flex-col items-center text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-full border border-[#78350F]/40 bg-[#451A03]">
@@ -224,6 +225,7 @@ export function KeyTransferModal({ onClose }: { onClose: () => void }) {
               </button>
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>

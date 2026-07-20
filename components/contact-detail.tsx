@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 import { useNicknames } from "@/components/nicknames-context";
 import { Avatar } from "@/lib/avatars";
@@ -45,7 +45,7 @@ function SettingsRow({
   );
 }
 
-function NicknameEditor({
+function NicknameSheet({
   initial,
   onSave,
   onClear,
@@ -56,12 +56,18 @@ function NicknameEditor({
   onClear: () => Promise<void>;
   onClose: () => void;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const id = requestAnimationFrame(() => inputRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, []);
+
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
+    <div className="absolute inset-0 z-20 flex flex-col justify-end">
       <button
         type="button"
         aria-label="Close nickname editor"
@@ -72,7 +78,7 @@ function NicknameEditor({
         role="dialog"
         aria-modal="true"
         aria-labelledby="nickname-editor-title"
-        className="safe-pb relative z-10 w-full max-w-md rounded-t-2xl border border-[#2E2B28] bg-[#1A1816] p-5 sm:rounded-2xl"
+        className="safe-pb relative w-full rounded-t-2xl border border-[#2E2B28] bg-[#1A1816] p-5"
       >
         <p
           id="nickname-editor-title"
@@ -80,26 +86,28 @@ function NicknameEditor({
         >
           Nickname
         </p>
-        <p className="mt-1 text-[13px] text-[#6E6963]">
-          Only you can see this label
-        </p>
         <input
+          ref={inputRef}
           value={value}
           onChange={(e) => setValue(e.target.value.slice(0, NICKNAME_MAX))}
           placeholder="Add a nickname"
           autoComplete="off"
-          autoFocus
           className="mt-4 h-12 w-full rounded-xl border border-[#2E2B28] bg-[#242220] px-4 text-[16px] text-[#FAFAF9] placeholder:text-[#6E6963] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
         />
-        <p className="mt-1 text-right text-[12px] text-[#6E6963]">
-          {value.length}/{NICKNAME_MAX}
-        </p>
         {error ? (
           <p className="mt-2 text-[13px] text-red-400" role="alert">
             {error}
           </p>
         ) : null}
         <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onClose}
+            className="flex min-h-[44px] flex-1 items-center justify-center rounded-xl text-[14px] font-medium text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9] disabled:opacity-40"
+          >
+            Cancel
+          </button>
           {initial.trim() ? (
             <button
               type="button"
@@ -178,32 +186,32 @@ export function ContactDetail({
   const showUsernameSubtitle = hasNickname(identity);
 
   return (
-    <>
-      <div className="fixed inset-0 z-50 flex flex-col bg-[#0F0E0D] md:items-center md:justify-center md:bg-black/60 md:p-4">
-        <button
-          type="button"
-          aria-label="Close contact detail"
-          className="absolute inset-0 hidden md:block"
-          onClick={onClose}
-        />
-        <div className="safe-pt relative flex h-full w-full flex-col overflow-y-auto bg-[#0F0E0D] md:h-auto md:max-h-[90dvh] md:max-w-md md:rounded-2xl md:border md:border-[#2E2B28] md:bg-[#1A1816]">
-          <div className="safe-pt sticky top-0 z-10 shrink-0 border-b border-[#2E2B28] bg-[#1A1816] md:rounded-t-2xl">
-            <div className="flex h-12 items-center gap-1 px-2">
-              <button
-                type="button"
-                aria-label="Back"
-                onClick={onClose}
-                className="flex h-11 w-11 items-center justify-center rounded-full text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9]"
-              >
-                <ChevronLeftIcon className="h-5 w-5" />
-              </button>
-              <span className="text-[15px] font-semibold text-[#FAFAF9]">
-                Contact
-              </span>
-            </div>
+    <div className="fixed inset-x-0 top-0 z-50 flex h-app flex-col md:inset-0 md:items-center md:justify-center md:bg-black/60 md:p-4">
+      <button
+        type="button"
+        aria-label="Close contact detail"
+        className="absolute inset-0 hidden md:block"
+        onClick={onClose}
+      />
+      <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#0F0E0D] md:h-auto md:max-h-[90dvh] md:max-w-md md:rounded-2xl md:border md:border-[#2E2B28] md:bg-[#1A1816]">
+        <header className="safe-pt shrink-0 border-b border-[#2E2B28] bg-[#1A1816] md:rounded-t-2xl">
+          <div className="flex h-12 items-center gap-1 px-2">
+            <button
+              type="button"
+              aria-label="Back"
+              onClick={onClose}
+              className="flex h-11 w-11 items-center justify-center rounded-full text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9]"
+            >
+              <ChevronLeftIcon className="h-5 w-5" />
+            </button>
+            <span className="text-[15px] font-semibold text-[#FAFAF9]">
+              Contact
+            </span>
           </div>
+        </header>
 
-          <div className="safe-pb mx-auto w-full max-w-md flex-1 space-y-6 p-4 sm:p-6">
+        <div className="safe-pb min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-md space-y-6 p-4 sm:p-6">
             <div className="flex flex-col items-center pt-4">
               <Avatar avatarId={avatarId} size={96} />
               <p className="mt-4 text-center text-[22px] font-semibold leading-[1.3] text-[#FAFAF9]">
@@ -226,27 +234,27 @@ export function ContactDetail({
             </div>
           </div>
         </div>
-      </div>
 
-      {editingNickname ? (
-        <NicknameEditor
-          initial={nickname ?? ""}
-          onClose={() => setEditingNickname(false)}
-          onSave={async (value) => {
-            if (!value) {
+        {editingNickname ? (
+          <NicknameSheet
+            initial={nickname ?? ""}
+            onClose={() => setEditingNickname(false)}
+            onSave={async (value) => {
+              if (!value) {
+                const result = await clearNickname(contactId);
+                if (!result.ok) throw new Error(result.error);
+                return;
+              }
+              const result = await saveNickname(contactId, value);
+              if (!result.ok) throw new Error(result.error);
+            }}
+            onClear={async () => {
               const result = await clearNickname(contactId);
               if (!result.ok) throw new Error(result.error);
-              return;
-            }
-            const result = await saveNickname(contactId, value);
-            if (!result.ok) throw new Error(result.error);
-          }}
-          onClear={async () => {
-            const result = await clearNickname(contactId);
-            if (!result.ok) throw new Error(result.error);
-          }}
-        />
-      ) : null}
-    </>
+            }}
+          />
+        ) : null}
+      </div>
+    </div>
   );
 }
