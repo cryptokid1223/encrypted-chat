@@ -15,6 +15,26 @@ const SECURE_KEY = "chat_private_key";
 /** Hard cap for every native import / plugin call / public API settle. */
 const NATIVE_TIMEOUT_MS = 3000;
 
+type CapacitorLike = { isNativePlatform?: () => boolean };
+
+declare global {
+  interface Window {
+    Capacitor?: CapacitorLike;
+  }
+}
+
+// Synchronous one-time native detection.
+// IMPORTANT: On web, `window.Capacitor` is typically undefined — in that case we
+// must never attempt plugin imports or start any timeout races.
+const IS_NATIVE_PLATFORM: boolean = (() => {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.Capacitor?.isNativePlatform?.() === true;
+  } catch {
+    return false;
+  }
+})();
+
 type SecureStorage = {
   get: (options: { key: string }) => Promise<{ value: string }>;
   set: (options: {
@@ -49,18 +69,9 @@ async function withNativeTimeout<T>(
   }
 }
 
-/** Never throws — false on web, SSR, or any Capacitor load/detect failure/hang. */
-async function isNative(): Promise<boolean> {
-  if (typeof window === "undefined") return false;
-  const result = await withNativeTimeout("Capacitor platform detect", async () => {
-    const core = await import("@capacitor/core");
-    return Boolean(core.Capacitor?.isNativePlatform?.());
-  });
-  return result === true;
-}
-
 /** Never hangs/throws — null if the plugin cannot be loaded in time. */
 async function getSecureStorage(): Promise<SecureStorage | null> {
+  if (!IS_NATIVE_PLATFORM) return null;
   return withNativeTimeout("SecureStoragePlugin import", async () => {
     // Exact package name required by Capacitor plugin registration.
     const mod = await import("capacitor-secure-storage-plugin");
@@ -184,7 +195,7 @@ async function secureSave(
 async function tryNativeLoad(
   idbPromise: Promise<string | null>,
 ): Promise<string | null> {
-  if (!(await isNative())) return null;
+  if (!IS_NATIVE_PLATFORM) return null;
 
   const plugin = await getSecureStorage();
   if (!plugin) return null;
@@ -204,7 +215,31 @@ async function tryNativeLoad(
 
 // ── Public API ───────────────────────────────────────────────────
 
+let privateKeyCache: string | null | undefined = undefined;
+let privateKeyLoadPromise: Promise<string | null> | null = null;
+let privateKeyCacheVersion = 0;
+
+/**
+ * Clears the in-memory session cache.
+ * Storage (IndexedDB/Keychain) is intentionally left untouched.
+ */
+export function invalidatePrivateKeyCache(): void {
+  privateKeyCacheVersion += 1;
+  privateKeyCache = undefined;
+  privateKeyLoadPromise = null;
+}
+
 export async function savePrivateKey(base64: string): Promise<void> {
+  // Key import should always invalidate the session cache first.
+  invalidatePrivateKeyCache();
+
+  // Web path: IndexedDB only (no plugin imports, no timeout races).
+  if (!IS_NATIVE_PLATFORM) {
+    await idbSave(base64);
+    privateKeyCache = base64;
+    return;
+  }
+
   const idbFallback = async () => {
     try {
       await idbSave(base64);
@@ -219,12 +254,10 @@ export async function savePrivateKey(base64: string): Promise<void> {
       "savePrivateKey",
       (async () => {
         try {
-          if (await isNative()) {
-            const plugin = await getSecureStorage();
-            if (plugin) {
-              const saved = await secureSave(plugin, base64);
-              if (saved) return;
-            }
+          const plugin = await getSecureStorage();
+          if (plugin) {
+            const saved = await secureSave(plugin, base64);
+            if (saved) return;
           }
         } catch (err) {
           console.warn(
@@ -239,60 +272,80 @@ export async function savePrivateKey(base64: string): Promise<void> {
     console.warn("[keystore] savePrivateKey failed or timed out", err);
     await idbFallback();
   }
+
+  // If either native or fallback succeeded, the key is now the current session key.
+  privateKeyCache = base64;
 }
 
 /**
- * Always settles within ~3s — native hangs fall back to IndexedDB.
+ * Load the private key once per session.
+ * On web, never start native plugin imports or 3s timeout races.
+ * On native, still uses the existing timeout+fallback behavior.
  */
 export async function loadPrivateKey(): Promise<string | null> {
-  const idbPromise = idbLoad();
+  if (privateKeyCache !== undefined) return privateKeyCache;
+  if (privateKeyLoadPromise) return privateKeyLoadPromise;
 
-  try {
-    const result = await Promise.race([
-      (async () => {
-        const nativeKey = await tryNativeLoad(idbPromise);
-        if (nativeKey) return nativeKey;
-        return idbPromise;
-      })(),
-      new Promise<string | null>((resolve) => {
-        setTimeout(() => {
-          console.warn(
-            "[keystore] loadPrivateKey timed out after 3s; IndexedDB fallback",
-          );
-          void idbPromise.then(resolve);
-        }, NATIVE_TIMEOUT_MS);
-      }),
-    ]);
-    return result;
-  } catch (err) {
-    console.warn(
-      "[keystore] loadPrivateKey failed; IndexedDB fallback",
-      err,
-    );
-    return idbPromise;
-  }
+  const versionAtStart = privateKeyCacheVersion;
+
+  const loadPromise: Promise<string | null> = (async () => {
+    const idbPromise = idbLoad();
+
+    // Web path: IndexedDB only. No timeouts, no native plugin imports.
+    if (!IS_NATIVE_PLATFORM) return idbPromise;
+
+    // Native path: race native keychain load against the 3s cap.
+    try {
+      const result = await Promise.race([
+        (async () => {
+          const nativeKey = await tryNativeLoad(idbPromise);
+          if (nativeKey) return nativeKey;
+          return idbPromise;
+        })(),
+        new Promise<string | null>((resolve) => {
+          setTimeout(() => {
+            console.warn(
+              "[keystore] loadPrivateKey timed out after 3s; IndexedDB fallback",
+            );
+            void idbPromise.then(resolve);
+          }, NATIVE_TIMEOUT_MS);
+        }),
+      ]);
+      return result;
+    } catch (err) {
+      console.warn(
+        "[keystore] loadPrivateKey failed; IndexedDB fallback",
+        err,
+      );
+      return idbPromise;
+    }
+  })()
+    .then((key) => {
+      // Avoid overwriting the cache after a logout/key-import invalidation.
+      if (privateKeyCacheVersion === versionAtStart) {
+        privateKeyCache = key;
+      }
+      return key;
+    })
+    .finally(() => {
+      // Only clear if this is still the active in-flight load.
+      if (privateKeyLoadPromise === loadPromise) {
+        privateKeyLoadPromise = null;
+      }
+    });
+
+  privateKeyLoadPromise = loadPromise;
+  return loadPromise;
 }
 
 /**
- * Always settles within ~3s with true or false — never hangs.
+ * True iff a private key is present on this device.
+ * (No native timeout races on web.)
  */
 export async function hasPrivateKey(): Promise<boolean> {
   try {
-    const result = await Promise.race([
-      (async () => {
-        const key = await loadPrivateKey();
-        return typeof key === "string" && key.length > 0;
-      })(),
-      new Promise<false>((resolve) => {
-        setTimeout(() => {
-          console.warn(
-            "[keystore] hasPrivateKey timed out after 3s; treating as no key",
-          );
-          resolve(false);
-        }, NATIVE_TIMEOUT_MS);
-      }),
-    ]);
-    return result === true;
+    const key = await loadPrivateKey();
+    return typeof key === "string" && key.length > 0;
   } catch {
     return false;
   }

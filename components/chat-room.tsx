@@ -2,62 +2,32 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeftIcon, LockIcon, SendIcon } from "@/components/icons";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeftIcon, LockIcon } from "@/components/icons";
 import { useKeyGate } from "@/components/key-gate";
-import {
-  formatDayDivider,
-  formatMessageTime,
-  isSameCalendarDay,
-  isSameMessageGroup,
-} from "@/lib/chat";
-import { decryptMessage, encryptMessage } from "@/lib/crypto";
+import { isSameCalendarDay, isSameMessageGroup } from "@/lib/chat";
+import { encryptMessage } from "@/lib/crypto";
 import { Avatar } from "@/lib/avatars";
 import { hasPrivateKey, loadPrivateKey } from "@/lib/keystore";
 import { createClient } from "@/lib/supabase/client";
+import { MessageBubble } from "@/components/message-bubble";
+import { ChatComposer } from "@/components/chat-composer";
+import type {
+  DecryptedMessage,
+  EncryptedMessageRow,
+} from "@/lib/message-decrypt";
+import {
+  decryptMessageBatch,
+  decryptMessageRow,
+} from "@/lib/message-decrypt";
 
 type DisplayMessage = {
   id: string;
   senderId: string;
   body: string;
   createdAt: string;
+  failed?: boolean;
 };
-
-type EncryptedRow = {
-  id: string;
-  sender_id: string;
-  ciphertext: string;
-  nonce: string;
-  created_at: string;
-};
-
-async function decryptRow(
-  row: EncryptedRow,
-  theirPublicKey: string,
-  myPrivateKey: string,
-): Promise<DisplayMessage> {
-  try {
-    const body = await decryptMessage(
-      row.ciphertext,
-      row.nonce,
-      theirPublicKey,
-      myPrivateKey,
-    );
-    return {
-      id: row.id,
-      senderId: row.sender_id,
-      body,
-      createdAt: row.created_at,
-    };
-  } catch {
-    return {
-      id: row.id,
-      senderId: row.sender_id,
-      body: "[unable to decrypt]",
-      createdAt: row.created_at,
-    };
-  }
-}
 
 export function ChatRoom() {
   const params = useParams<{ conversationId: string }>();
@@ -72,20 +42,39 @@ export function ChatRoom() {
   const [theirPublicKey, setTheirPublicKey] = useState<string | null>(null);
   const [myPrivateKey, setMyPrivateKey] = useState<string | null>(null);
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
-  const [draft, setDraft] = useState("");
+  const messagesRef = useRef<DisplayMessage[]>([]);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
   const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
 
+  const scrollerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const seenIdsRef = useRef(new Set<string>());
+  const myUserIdRef = useRef<string | null>(null);
+  const theirPublicKeyRef = useRef<string | null>(null);
+  const myPrivateKeyRef = useRef<string | null>(null);
+
+  // Own optimistic sends keyed by ciphertext|nonce so realtime can reconcile without decrypting.
+  const pendingByCipherRef = useRef<
+    Map<string, { tempId: string; body: string }>
+  >(new Map());
 
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
+  const isNearBottom = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return true;
+    const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
+    return remaining < 180;
+  }, []);
+
   useEffect(() => {
+    if (!isNearBottom()) return;
     scrollToBottom();
-  }, [messages, scrollToBottom]);
+  }, [messages, isNearBottom, scrollToBottom]);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +85,7 @@ export function ChatRoom() {
       setStatus("loading");
       setError(null);
       seenIdsRef.current = new Set();
+      pendingByCipherRef.current.clear();
 
       try {
         if (!(await hasPrivateKey())) {
@@ -180,10 +170,10 @@ export function ChatRoom() {
           return;
         }
 
-        const decrypted = await Promise.all(
-          (rows ?? []).map((row) =>
-            decryptRow(row as EncryptedRow, otherProfile.public_key, privateKey),
-          ),
+        const decrypted = await decryptMessageBatch(
+          (rows ?? []) as EncryptedMessageRow[],
+          otherProfile.public_key,
+          privateKey,
         );
 
         if (cancelled) return;
@@ -195,6 +185,9 @@ export function ChatRoom() {
         setMyUserId(user.id);
         setTheirPublicKey(otherProfile.public_key);
         setMyPrivateKey(privateKey);
+        myUserIdRef.current = user.id;
+        theirPublicKeyRef.current = otherProfile.public_key;
+        myPrivateKeyRef.current = privateKey;
         setOtherUsername(otherProfile.username);
         setOtherAvatarId((otherProfile.avatar_id as string | null) ?? null);
         setMessages(decrypted);
@@ -212,12 +205,34 @@ export function ChatRoom() {
             },
             (payload) => {
               void (async () => {
-                const row = payload.new as EncryptedRow;
-                // Skip duplicates from optimistic send + realtime echo.
+                const row = payload.new as EncryptedMessageRow;
                 if (!row?.id || seenIdsRef.current.has(row.id)) return;
+
+                // Own optimistic send reconciliation:
+                // if we recognize the ciphertext+nonce pair, reuse our plaintext
+                // (and don't decrypt).
+                const myId = myUserIdRef.current;
+                if (myId && row.sender_id === myId) {
+                  const cipherKey = `${row.ciphertext}|${row.nonce}`;
+                  const pending = pendingByCipherRef.current.get(cipherKey);
+                  if (pending) {
+                    pendingByCipherRef.current.delete(cipherKey);
+                    seenIdsRef.current.add(row.id);
+                    if (cancelled) return;
+                    setMessages((prev) =>
+                      prev.map((m) =>
+                        m.id === pending.tempId
+                          ? { ...m, id: row.id, createdAt: row.created_at, failed: false }
+                          : m,
+                      ),
+                    );
+                    return;
+                  }
+                }
+
                 seenIdsRef.current.add(row.id);
 
-                const display = await decryptRow(
+                const display = await decryptMessageRow(
                   row,
                   otherProfile.public_key,
                   privateKey,
@@ -251,62 +266,121 @@ export function ChatRoom() {
     };
   }, [conversationId, requireKeyImport]);
 
-  async function sendMessage(e: React.FormEvent) {
-    e.preventDefault();
-    setSendError(null);
+  const sendPlaintext = useCallback(
+    (text: string, existingId?: string) => {
+      const myId = myUserIdRef.current;
+      if (!myId) return;
 
-    const text = draft.trim();
-    if (!text || !myUserId || !theirPublicKey) return;
+      const tempId =
+        existingId ??
+        `local:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+      const optimisticCreatedAt = new Date().toISOString();
 
-    if (!(await hasPrivateKey()) || !myPrivateKey) {
-      requireKeyImport();
-      return;
-    }
-
-    setSending(true);
-    try {
-      // Encrypt client-side only — never send plaintext to Supabase.
-      const { ciphertext, nonce } = await encryptMessage(
-        text,
-        theirPublicKey,
-        myPrivateKey,
-      );
-
-      const supabase = createClient();
-      const { data: inserted, error: insertError } = await supabase
-        .from("messages")
-        .insert({
-          conversation_id: conversationId,
-          sender_id: myUserId,
-          ciphertext,
-          nonce,
-        })
-        .select("id, sender_id, ciphertext, nonce, created_at")
-        .single();
-
-      if (insertError || !inserted) {
-        setSendError("Could not send message. Try again.");
-        return;
-      }
-
-      const display = await decryptRow(
-        inserted as EncryptedRow,
-        theirPublicKey,
-        myPrivateKey,
-      );
-      seenIdsRef.current.add(display.id);
+      // Optimistic UI: show immediately (no decrypt, no waiting).
       setMessages((prev) => {
-        if (prev.some((m) => m.id === display.id)) return prev;
-        return [...prev, display];
+        if (existingId) {
+          return prev.map((m) =>
+            m.id === existingId
+              ? { ...m, body: text, createdAt: optimisticCreatedAt, failed: false }
+              : m,
+          );
+        }
+        if (prev.some((m) => m.id === tempId)) return prev;
+        return [
+          ...prev,
+          { id: tempId, senderId: myId, body: text, createdAt: optimisticCreatedAt },
+        ];
       });
-      setDraft("");
-    } catch {
-      // Never surface a raw crypto failure — force key import with toast.
-      requireKeyImport();
-    } finally {
-      setSending(false);
-    }
-  }
+
+      void (async () => {
+        setSending(true);
+        let cipherKey: string | null = null;
+
+        try {
+          if (!(await hasPrivateKey())) {
+            requireKeyImport();
+            return;
+          }
+
+          const theirKey = theirPublicKeyRef.current;
+          const myKey = myPrivateKeyRef.current;
+          if (!theirKey || !myKey) {
+            requireKeyImport();
+            return;
+          }
+
+          // Encrypt before insert so we know the ciphertext/nonce for reconciliation.
+          const { ciphertext, nonce } = await encryptMessage(
+            text,
+            theirKey,
+            myKey,
+          );
+          cipherKey = `${ciphertext}|${nonce}`;
+          pendingByCipherRef.current.set(cipherKey, { tempId, body: text });
+
+          const supabase = createClient();
+          const { data: inserted, error: insertError } = await supabase
+            .from("messages")
+            .insert({
+              conversation_id: conversationId,
+              sender_id: myId,
+              ciphertext,
+              nonce,
+            })
+            .select("id, sender_id, ciphertext, nonce, created_at")
+            .single();
+
+          if (insertError || !inserted) {
+            throw new Error("Could not send message");
+          }
+
+          pendingByCipherRef.current.delete(cipherKey);
+          seenIdsRef.current.add(inserted.id);
+
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === tempId
+                ? { ...m, id: inserted.id, createdAt: inserted.created_at, failed: false }
+                : m,
+            ),
+          );
+        } catch (err) {
+          // If encryption/key is the issue, route to import screen.
+          if (!(await hasPrivateKey())) {
+            requireKeyImport();
+            return;
+          }
+
+          if (cipherKey) {
+            pendingByCipherRef.current.delete(cipherKey);
+          }
+
+          setMessages((prev) =>
+            prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)),
+          );
+        } finally {
+          setSending(false);
+        }
+      })();
+    },
+    [conversationId, requireKeyImport],
+  );
+
+  const handleSend = useCallback(
+    (text: string) => {
+      sendPlaintext(text);
+    },
+    [sendPlaintext],
+  );
+
+  const handleRetry = useCallback(
+    (id: string) => {
+      const msg = messagesRef.current.find((m) => m.id === id);
+      if (!msg) return;
+      sendPlaintext(msg.body, id);
+    },
+    [sendPlaintext],
+  );
 
   if (status === "loading") {
     return (
@@ -356,7 +430,11 @@ export function ChatRoom() {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div
+        ref={scrollerRef}
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+        style={{ WebkitOverflowScrolling: "touch" }}
+      >
         <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-3">
           {messages.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
@@ -409,38 +487,20 @@ export function ChatRoom() {
 
                 return (
                   <li key={m.id}>
-                    {showDayDivider ? (
-                      <div className="my-4 flex justify-center">
-                        <span className="text-[12px] text-[#6E6963]">
-                          {formatDayDivider(m.createdAt)}
-                        </span>
-                      </div>
-                    ) : null}
-                    <div
-                      className={`flex flex-col ${mine ? "items-end" : "items-start"}`}
-                      style={{
-                        marginTop: showDayDivider
-                          ? 0
-                          : sameGroupPrev
-                            ? 2
-                            : 16,
-                      }}
-                    >
-                      <div
-                        className={`max-w-[65%] px-[14px] py-[10px] text-[15px] leading-[1.4] ${bubbleRadius} ${
-                          mine
-                            ? "bg-[#EA580C] text-white"
-                            : "bg-[#242220] text-[#FAFAF9]"
-                        }`}
-                      >
-                        {m.body}
-                      </div>
-                      {!sameGroupNext ? (
-                        <span className="mt-1 px-1 text-[11px] text-[#6E6963]">
-                          {formatMessageTime(m.createdAt)}
-                        </span>
-                      ) : null}
-                    </div>
+                    <MessageBubble
+                      id={m.id}
+                      body={m.body}
+                      isMine={mine}
+                      timestamp={m.createdAt}
+                      showDayDivider={showDayDivider}
+                      showTimestamp={!sameGroupNext}
+                      bubbleRadius={bubbleRadius}
+                      marginTop={
+                        showDayDivider ? 0 : sameGroupPrev ? 2 : 16
+                      }
+                      failed={m.failed}
+                      onRetry={handleRetry}
+                    />
                   </li>
                 );
               })}
@@ -450,39 +510,7 @@ export function ChatRoom() {
         </div>
       </div>
 
-      <form
-        onSubmit={sendMessage}
-        className="safe-pb shrink-0 border-t border-[#2E2B28] bg-[#0F0E0D]"
-      >
-        <div className="mx-auto w-full max-w-3xl px-3 py-2.5">
-          <div className="relative flex items-center">
-            <input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="Message"
-              autoComplete="off"
-              className={`h-11 w-full rounded-full border border-[#2E2B28] bg-[#242220] py-2.5 text-[14px] leading-[1.4] text-[#FAFAF9] placeholder:text-[#6E6963] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C] ${
-                draft.trim() ? "pl-4 pr-12" : "px-4"
-              }`}
-            />
-            {draft.trim() ? (
-              <button
-                type="submit"
-                disabled={sending}
-                aria-label="Send"
-                className="absolute right-1.5 flex h-9 w-9 items-center justify-center rounded-full bg-[#EA580C] text-white transition-colors duration-150 ease-in-out hover:bg-[#C2410C] disabled:opacity-40"
-              >
-                <SendIcon className="h-4 w-4" />
-              </button>
-            ) : null}
-          </div>
-          {sendError ? (
-            <p className="mt-1.5 px-1 text-[13px] text-red-400" role="alert">
-              {sendError}
-            </p>
-          ) : null}
-        </div>
-      </form>
+      <ChatComposer onSend={handleSend} disabled={sending} />
     </div>
   );
 }

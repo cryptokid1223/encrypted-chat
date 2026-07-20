@@ -12,7 +12,11 @@ import {
 import { useRouter } from "next/navigation";
 import { AuthAtmosphere } from "@/components/auth-atmosphere";
 import { Logo } from "@/components/logo";
-import { hasPrivateKey, savePrivateKey } from "@/lib/keystore";
+import {
+  hasPrivateKey,
+  invalidatePrivateKeyCache,
+  savePrivateKey,
+} from "@/lib/keystore";
 import { createClient } from "@/lib/supabase/client";
 
 const GATE_SAFETY_MS = 6000;
@@ -122,6 +126,8 @@ export function KeyGate({ children }: { children: ReactNode }) {
     try {
       const supabase = createClient();
       await supabase.auth.signOut();
+      // New session/account should not reuse the previous in-memory decrypted key.
+      invalidatePrivateKeyCache();
       router.replace("/login");
       router.refresh();
     } catch {

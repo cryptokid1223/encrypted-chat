@@ -2,8 +2,18 @@ import sodium from "libsodium-wrappers-sumo";
 
 const B64 = () => sodium.base64_variants.ORIGINAL;
 
+let sodiumReady: Promise<void> | null = null;
+
+/** Call once at app start — subsequent crypto ops reuse the same ready promise. */
+export function warmSodium(): Promise<void> {
+  if (!sodiumReady) {
+    sodiumReady = sodium.ready;
+  }
+  return sodiumReady;
+}
+
 async function ready() {
-  await sodium.ready;
+  await warmSodium();
 }
 
 export async function generateKeyPair(): Promise<{
@@ -49,6 +59,7 @@ export async function decryptMessage(
 ): Promise<string> {
   await ready();
 
+  console.count("decrypt");
   try {
     const plaintext = sodium.crypto_box_open_easy(
       sodium.from_base64(ciphertextB64, B64()),

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { NewChatModal } from "@/components/new-chat-modal";
 import { LockIcon, PencilIcon } from "@/components/icons";
 import { formatListTime } from "@/lib/chat";
@@ -35,6 +35,47 @@ function sortByActivity(rows: ConversationRow[]): ConversationRow[] {
   );
 }
 
+const ConversationRowItem = memo(function ConversationRowItem({
+  id,
+  otherUsername,
+  otherAvatarId,
+  lastActivity,
+  active,
+}: {
+  id: string;
+  otherUsername: string;
+  otherAvatarId: string | null;
+  lastActivity: string;
+  active: boolean;
+}) {
+  return (
+    <Link
+      href={`/chats/${id}`}
+      className={`flex h-16 items-center gap-3 px-3 transition-colors duration-150 ease-in-out ${
+        active
+          ? "bg-[#242220]"
+          : "hover:bg-[#242220]/70 active:bg-[#242220]"
+      }`}
+    >
+      <Avatar avatarId={otherAvatarId} size={40} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="truncate text-[14px] font-medium text-[#FAFAF9]">
+            {otherUsername}
+          </p>
+          <span className="shrink-0 text-[11px] text-[#6E6963]">
+            {formatListTime(lastActivity)}
+          </span>
+        </div>
+        <p className="mt-0.5 flex items-center gap-1 text-[13px] text-[#6E6963]">
+          <LockIcon className="h-3 w-3 shrink-0" />
+          <span className="truncate">Encrypted message</span>
+        </p>
+      </div>
+    </Link>
+  );
+});
+
 export function ChatList({
   activeConversationId,
 }: {
@@ -48,6 +89,28 @@ export function ChatList({
 
   const conversationsRef = useRef(conversations);
   const myUserIdRef = useRef<string | null>(null);
+  const pendingActivityRef = useRef<Map<string, string>>(new Map());
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushPendingActivities = useCallback(() => {
+    const pending = pendingActivityRef.current;
+    if (pending.size === 0) return;
+    pendingActivityRef.current = new Map();
+    setConversations((prev) => {
+      const updated = prev.map((c) => {
+        const nextActivity = pending.get(c.id);
+        if (!nextActivity) return c;
+        return { ...c, lastActivity: nextActivity };
+      });
+      return sortByActivity(updated);
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     conversationsRef.current = conversations;
@@ -250,23 +313,27 @@ export function ChatList({
               return;
             }
 
-            // Bump to top by last activity (works for open and closed chats).
-            setConversations((prev) =>
-              sortByActivity(
-                prev.map((c) =>
-                  c.id === row.conversation_id
-                    ? {
-                        ...c,
-                        lastActivity:
-                          new Date(row.created_at).getTime() >=
-                          new Date(c.lastActivity).getTime()
-                            ? row.created_at
-                            : c.lastActivity,
-                      }
-                    : c,
-                ),
-              ),
+            // Debounced bump to top by last activity.
+            const currentPending = pendingActivityRef.current.get(
+              row.conversation_id,
             );
+            if (
+              !currentPending ||
+              new Date(row.created_at).getTime() >=
+                new Date(currentPending).getTime()
+            ) {
+              pendingActivityRef.current.set(
+                row.conversation_id,
+                row.created_at,
+              );
+            }
+
+            if (!flushTimerRef.current) {
+              flushTimerRef.current = setTimeout(() => {
+                flushTimerRef.current = null;
+                flushPendingActivities();
+              }, 120);
+            }
           },
         )
         .subscribe();
@@ -280,7 +347,7 @@ export function ChatList({
         void supabase.removeChannel(channel);
       }
     };
-  }, [loadConversations, upsertConversationFromRow]);
+  }, [loadConversations, upsertConversationFromRow, flushPendingActivities]);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -322,37 +389,17 @@ export function ChatList({
         </div>
       ) : (
         <ul className="min-h-0 flex-1 overflow-y-auto pb-20">
-          {conversations.map((c) => {
-            const active = activeConversationId === c.id;
-            return (
-              <li key={c.id}>
-                <Link
-                  href={`/chats/${c.id}`}
-                  className={`flex h-16 items-center gap-3 px-3 transition-colors duration-150 ease-in-out ${
-                    active
-                      ? "bg-[#242220]"
-                      : "hover:bg-[#242220]/70 active:bg-[#242220]"
-                  }`}
-                >
-                  <Avatar avatarId={c.otherAvatarId} size={40} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <p className="truncate text-[14px] font-medium text-[#FAFAF9]">
-                        {c.otherUsername}
-                      </p>
-                      <span className="shrink-0 text-[11px] text-[#6E6963]">
-                        {formatListTime(c.lastActivity)}
-                      </span>
-                    </div>
-                    <p className="mt-0.5 flex items-center gap-1 text-[13px] text-[#6E6963]">
-                      <LockIcon className="h-3 w-3 shrink-0" />
-                      <span className="truncate">Encrypted message</span>
-                    </p>
-                  </div>
-                </Link>
-              </li>
-            );
-          })}
+          {conversations.map((c) => (
+            <li key={c.id}>
+              <ConversationRowItem
+                id={c.id}
+                otherUsername={c.otherUsername}
+                otherAvatarId={c.otherAvatarId}
+                lastActivity={c.lastActivity}
+                active={activeConversationId === c.id}
+              />
+            </li>
+          ))}
         </ul>
       )}
 

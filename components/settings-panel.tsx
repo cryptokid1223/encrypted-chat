@@ -6,7 +6,10 @@ import { useEffect, useState } from "react";
 import { AvatarPicker } from "@/components/avatar-picker";
 import { ChevronLeftIcon } from "@/components/icons";
 import { DEFAULT_AVATAR_ID } from "@/lib/avatars";
-import { loadPrivateKey } from "@/lib/keystore";
+import {
+  invalidatePrivateKeyCache,
+  loadPrivateKey,
+} from "@/lib/keystore";
 import { createClient } from "@/lib/supabase/client";
 
 export function SettingsPanel() {
@@ -101,6 +104,8 @@ export function SettingsPanel() {
     try {
       const supabase = createClient();
       await supabase.auth.signOut();
+      // New session/account should not reuse the previous in-memory decrypted key.
+      invalidatePrivateKeyCache();
       router.replace("/login");
       router.refresh();
     } catch {
