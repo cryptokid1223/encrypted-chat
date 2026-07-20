@@ -13,7 +13,7 @@ export default async function HomePage() {
   }
 
   return (
-    <div className="relative flex min-h-dvh flex-1 flex-col items-center justify-center overflow-y-auto bg-[#0F0E0D] px-4 py-10">
+    <div className="relative flex h-full min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto bg-[#0F0E0D] px-4 py-10">
       <AuthAtmosphere />
       <div className="safe-pb relative z-10 w-full max-w-md rounded-3xl border border-[#2E2B28] bg-[#1A1816] p-8 text-center">
         <div className="flex justify-center">

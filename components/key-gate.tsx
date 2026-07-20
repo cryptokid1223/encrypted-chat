@@ -137,7 +137,7 @@ export function KeyGate({ children }: { children: ReactNode }) {
 
   if (!ready) {
     return (
-      <div className="flex min-h-dvh flex-1 items-center justify-center bg-[#0F0E0D] p-6 text-[13px] text-[#6E6963]">
+      <div className="flex h-full min-h-0 flex-1 items-center justify-center bg-[#0F0E0D] p-6 text-[13px] text-[#6E6963]">
         Loading…
       </div>
     );
@@ -146,7 +146,7 @@ export function KeyGate({ children }: { children: ReactNode }) {
   if (!hasKey) {
     return (
       <KeyGateContext.Provider value={{ hasKey: false, requireKeyImport }}>
-        <div className="safe-px relative flex min-h-dvh flex-1 justify-center overflow-y-auto bg-[#0F0E0D] p-4">
+        <div className="safe-px relative flex h-full min-h-0 flex-1 justify-center overflow-y-auto bg-[#0F0E0D] p-4">
           {flash ? (
             <div
               role="status"

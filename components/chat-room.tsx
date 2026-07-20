@@ -62,7 +62,9 @@ export function ChatRoom() {
   >(new Map());
 
   const scrollToBottom = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, []);
 
   const isNearBottom = useCallback(() => {

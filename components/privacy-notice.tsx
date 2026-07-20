@@ -16,7 +16,7 @@ export function PrivacyNotice() {
   }
 
   return (
-    <div className="relative flex min-h-dvh flex-1 justify-center overflow-y-auto bg-[#0F0E0D] px-4 py-8">
+    <div className="relative flex h-full min-h-0 flex-1 justify-center overflow-y-auto bg-[#0F0E0D] px-4 py-8">
       <AuthAtmosphere />
       <div className="safe-pb relative z-10 my-auto w-full max-w-lg">
         <div className="mb-5 flex justify-center">
