@@ -7,7 +7,10 @@ import { PencilIcon, SearchIcon } from "@/components/icons";
 import { useNicknames } from "@/components/nicknames-context";
 import { useProfile } from "@/components/profile-context";
 import { formatListTime } from "@/lib/chat";
+import { fetchConversationPreview, previewFromMessageRow } from "@/lib/conversationPreview";
 import { contactMatchesQuery, displayName } from "@/lib/display-name";
+import { hasPrivateKey, loadPrivateKey } from "@/lib/keystore";
+import type { EncryptedMessageRow } from "@/lib/message-decrypt";
 import { Avatar, AVATARS } from "@/lib/avatars";
 import { createClient } from "@/lib/supabase/client";
 
@@ -16,7 +19,9 @@ type ConversationRow = {
   otherUserId: string;
   otherUsername: string;
   otherAvatarId: string | null;
+  otherPublicKey: string;
   lastActivity: string;
+  lastPreview: string;
 };
 
 type ConversationInsert = {
@@ -29,6 +34,9 @@ type ConversationInsert = {
 type MessageInsert = {
   id: string;
   conversation_id: string;
+  sender_id: string;
+  ciphertext: string;
+  nonce: string;
   created_at: string;
 };
 
@@ -64,6 +72,7 @@ const ConversationRowItem = memo(function ConversationRowItem({
   otherAvatarId,
   nickname,
   lastActivity,
+  lastPreview,
   active,
   isLast,
 }: {
@@ -72,6 +81,7 @@ const ConversationRowItem = memo(function ConversationRowItem({
   otherAvatarId: string | null;
   nickname: string | null;
   lastActivity: string;
+  lastPreview: string;
   active: boolean;
   isLast: boolean;
 }) {
@@ -99,7 +109,7 @@ const ConversationRowItem = memo(function ConversationRowItem({
           </span>
         </div>
         <p className="mt-0.5 truncate text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]">
-          Encrypted message
+          {lastPreview}
         </p>
       </div>
     </Link>
@@ -124,7 +134,11 @@ export function ChatList({
   const scrollRef = useRef<HTMLDivElement>(null);
   const conversationsRef = useRef(conversations);
   const myUserIdRef = useRef<string | null>(null);
-  const pendingActivityRef = useRef<Map<string, string>>(new Map());
+  const myPrivateKeyRef = useRef<string | null>(null);
+  const otherPublicKeyByConvRef = useRef<Map<string, string>>(new Map());
+  const pendingUpdateRef = useRef<
+    Map<string, { lastActivity: string; lastPreview?: string }>
+  >(new Map());
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleListScroll = useCallback(() => {
@@ -133,15 +147,21 @@ export function ChatList({
     setListScrolled(el.scrollTop > 0);
   }, []);
 
-  const flushPendingActivities = useCallback(() => {
-    const pending = pendingActivityRef.current;
+  const flushPendingUpdates = useCallback(() => {
+    const pending = pendingUpdateRef.current;
     if (pending.size === 0) return;
-    pendingActivityRef.current = new Map();
+    pendingUpdateRef.current = new Map();
     setConversations((prev) => {
       const updated = prev.map((c) => {
-        const nextActivity = pending.get(c.id);
-        if (!nextActivity) return c;
-        return { ...c, lastActivity: nextActivity };
+        const next = pending.get(c.id);
+        if (!next) return c;
+        return {
+          ...c,
+          lastActivity: next.lastActivity,
+          ...(next.lastPreview !== undefined
+            ? { lastPreview: next.lastPreview }
+            : {}),
+        };
       });
       return sortByActivity(updated);
     });
@@ -177,6 +197,12 @@ export function ChatList({
       setMyUserId(user.id);
       myUserIdRef.current = user.id;
 
+      let myPrivateKey: string | null = null;
+      if (await hasPrivateKey()) {
+        myPrivateKey = await loadPrivateKey();
+        myPrivateKeyRef.current = myPrivateKey;
+      }
+
       const [convRows] = await Promise.all([
         supabase
           .from("conversations")
@@ -201,7 +227,7 @@ export function ChatList({
 
       const { data: profiles, error: profileError } = await supabase
         .from("profiles")
-        .select("id, username, avatar_id")
+        .select("id, username, avatar_id, public_key")
         .in("id", otherIds);
 
       if (profileError) {
@@ -215,35 +241,64 @@ export function ChatList({
           {
             username: p.username as string,
             avatar_id: (p.avatar_id as string | null) ?? null,
+            public_key: (p.public_key as string) ?? "",
           },
         ]),
       );
 
       const prevById = new Map(
-        conversationsRef.current.map((c) => [c.id, c.lastActivity]),
+        conversationsRef.current.map((c) => [
+          c.id,
+          { lastActivity: c.lastActivity, lastPreview: c.lastPreview },
+        ]),
       );
 
-      const next = convRows.map((row) => {
-        const otherId =
-          row.participant_a === user.id
-            ? row.participant_b
-            : row.participant_a;
-        const profile = profileById.get(otherId as string);
-        const createdAt = row.created_at as string;
-        const prior = prevById.get(row.id as string);
-        const lastActivity =
-          prior && new Date(prior).getTime() > new Date(createdAt).getTime()
-            ? prior
-            : createdAt;
+      const next = await Promise.all(
+        convRows.map(async (row) => {
+          const otherId =
+            row.participant_a === user.id
+              ? row.participant_b
+              : row.participant_a;
+          const profile = profileById.get(otherId as string);
+          const createdAt = row.created_at as string;
+          const prior = prevById.get(row.id as string);
+          const lastActivity =
+            prior &&
+            new Date(prior.lastActivity).getTime() > new Date(createdAt).getTime()
+              ? prior.lastActivity
+              : createdAt;
 
-        return {
-          id: row.id as string,
-          otherUserId: otherId as string,
-          otherUsername: profile?.username ?? "unknown",
-          otherAvatarId: profile?.avatar_id ?? null,
-          lastActivity,
-        };
-      });
+          const otherPublicKey = profile?.public_key ?? "";
+          otherPublicKeyByConvRef.current.set(row.id as string, otherPublicKey);
+
+          let lastPreview = prior?.lastPreview ?? "Encrypted message";
+          if (
+            myPrivateKey &&
+            otherPublicKey &&
+            (!prior?.lastPreview || prior.lastActivity !== lastActivity)
+          ) {
+            try {
+              lastPreview = await fetchConversationPreview(
+                row.id as string,
+                otherPublicKey,
+                myPrivateKey,
+              );
+            } catch {
+              lastPreview = "Encrypted message";
+            }
+          }
+
+          return {
+            id: row.id as string,
+            otherUserId: otherId as string,
+            otherUsername: profile?.username ?? "unknown",
+            otherAvatarId: profile?.avatar_id ?? null,
+            otherPublicKey,
+            lastActivity,
+            lastPreview,
+          };
+        }),
+      );
 
       setConversations(sortByActivity(next));
     } catch {
@@ -269,9 +324,12 @@ export function ChatList({
       const supabase = createClient();
       const { data: profile } = await supabase
         .from("profiles")
-        .select("username, avatar_id")
+        .select("username, avatar_id, public_key")
         .eq("id", otherId)
         .maybeSingle();
+
+      const otherPublicKey = (profile?.public_key as string) ?? "";
+      otherPublicKeyByConvRef.current.set(row.id, otherPublicKey);
 
       setConversations((prev) => {
         if (prev.some((c) => c.id === row.id)) return prev;
@@ -281,7 +339,9 @@ export function ChatList({
             otherUserId: otherId,
             otherUsername: (profile?.username as string) ?? "unknown",
             otherAvatarId: (profile?.avatar_id as string | null) ?? null,
+            otherPublicKey,
             lastActivity: row.created_at,
+            lastPreview: "Encrypted message",
           },
           ...prev,
         ]);
@@ -321,6 +381,10 @@ export function ChatList({
 
       setMyUserId(user.id);
       myUserIdRef.current = user.id;
+
+      if (await hasPrivateKey()) {
+        myPrivateKeyRef.current = await loadPrivateKey();
+      }
 
       channel = supabase
         .channel(`inbox:${user.id}`)
@@ -368,26 +432,45 @@ export function ChatList({
               return;
             }
 
-            const currentPending = pendingActivityRef.current.get(
-              row.conversation_id,
-            );
-            if (
-              !currentPending ||
-              new Date(row.created_at).getTime() >=
-                new Date(currentPending).getTime()
-            ) {
-              pendingActivityRef.current.set(
+            void (async () => {
+              const myPrivateKey = myPrivateKeyRef.current;
+              const otherPublicKey = otherPublicKeyByConvRef.current.get(
                 row.conversation_id,
-                row.created_at,
               );
-            }
+              let lastPreview: string | undefined;
+              if (myPrivateKey && otherPublicKey) {
+                try {
+                  lastPreview = await previewFromMessageRow(
+                    row as EncryptedMessageRow,
+                    otherPublicKey,
+                    myPrivateKey,
+                  );
+                } catch {
+                  // Keep existing preview on decrypt failure.
+                }
+              }
 
-            if (!flushTimerRef.current) {
-              flushTimerRef.current = setTimeout(() => {
-                flushTimerRef.current = null;
-                flushPendingActivities();
-              }, 120);
-            }
+              const currentPending = pendingUpdateRef.current.get(
+                row.conversation_id,
+              );
+              if (
+                !currentPending ||
+                new Date(row.created_at).getTime() >=
+                  new Date(currentPending.lastActivity).getTime()
+              ) {
+                pendingUpdateRef.current.set(row.conversation_id, {
+                  lastActivity: row.created_at,
+                  ...(lastPreview !== undefined ? { lastPreview } : {}),
+                });
+              }
+
+              if (!flushTimerRef.current) {
+                flushTimerRef.current = setTimeout(() => {
+                  flushTimerRef.current = null;
+                  flushPendingUpdates();
+                }, 120);
+              }
+            })();
           },
         )
         .subscribe();
@@ -401,7 +484,7 @@ export function ChatList({
         void supabase.removeChannel(channel);
       }
     };
-  }, [loadConversations, upsertConversationFromRow, flushPendingActivities]);
+  }, [loadConversations, upsertConversationFromRow, flushPendingUpdates]);
 
   const showLoading = loadingList || !nicknamesLoaded;
 
@@ -515,6 +598,7 @@ export function ChatList({
                       otherAvatarId={c.otherAvatarId}
                       nickname={nicknames[c.otherUserId] ?? null}
                       lastActivity={c.lastActivity}
+                      lastPreview={c.lastPreview}
                       active={activeConversationId === c.id}
                       isLast={index === filteredConversations.length - 1}
                     />

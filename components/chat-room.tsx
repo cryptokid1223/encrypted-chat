@@ -9,6 +9,10 @@ import { useKeyGate } from "@/components/key-gate";
 import { useNicknames } from "@/components/nicknames-context";
 import { isSameCalendarDay } from "@/lib/chat";
 import { encryptMessage } from "@/lib/crypto";
+import { encryptFile } from "@/lib/fileCrypto";
+import { uploadEncryptedAttachment } from "@/lib/attachmentStorage";
+import { ImageTooLargeError, processImageForSend } from "@/lib/imageProcessing";
+import { buildAttachmentBody } from "@/lib/messageContent";
 import { Avatar } from "@/lib/avatars";
 import {
   displayName,
@@ -35,6 +39,7 @@ type DisplayMessage = {
   body: string;
   createdAt: string;
   failed?: boolean;
+  localPreviewUrl?: string;
 };
 
 /** Render-layer grouping: same sender within 60 seconds. */
@@ -93,6 +98,10 @@ export function ChatRoom() {
     messagesRef.current = messages;
   }, [messages]);
   const [sending, setSending] = useState(false);
+  const [attachUploading, setAttachUploading] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
+
+  const pendingFileRef = useRef<Map<string, File>>(new Map());
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -109,6 +118,14 @@ export function ChatRoom() {
 
   useEffect(() => {
     initialMessageIdsRef.current = null;
+    pendingFileRef.current.clear();
+    return () => {
+      for (const m of messagesRef.current) {
+        if (m.localPreviewUrl) {
+          URL.revokeObjectURL(m.localPreviewUrl);
+        }
+      }
+    };
   }, [conversationId]);
 
   useEffect(() => {
@@ -329,7 +346,12 @@ export function ChatRoom() {
   }, [conversationId, requireKeyImport]);
 
   const sendPlaintext = useCallback(
-    (text: string, existingId?: string) => {
+    (
+      text: string,
+      existingId?: string,
+      options?: { manageSendingState?: boolean; preservePreview?: boolean },
+    ) => {
+      const manageSendingState = options?.manageSendingState !== false;
       const myId = myUserIdRef.current;
       if (!myId) return;
 
@@ -343,7 +365,12 @@ export function ChatRoom() {
         if (existingId) {
           return prev.map((m) =>
             m.id === existingId
-              ? { ...m, body: text, createdAt: optimisticCreatedAt, failed: false }
+              ? {
+                  ...m,
+                  body: text,
+                  createdAt: optimisticCreatedAt,
+                  failed: false,
+                }
               : m,
           );
         }
@@ -355,7 +382,9 @@ export function ChatRoom() {
       });
 
       void (async () => {
-        setSending(true);
+        if (manageSendingState) {
+          setSending(true);
+        }
         let cipherKey: string | null = null;
 
         try {
@@ -402,11 +431,17 @@ export function ChatRoom() {
           setMessages((prev) =>
             prev.map((m) =>
               m.id === tempId
-                ? { ...m, id: inserted.id, createdAt: inserted.created_at, failed: false }
+                ? {
+                    ...m,
+                    id: inserted.id,
+                    createdAt: inserted.created_at,
+                    failed: false,
+                  }
                 : m,
             ),
           );
-        } catch (err) {
+          pendingFileRef.current.delete(tempId);
+        } catch {
           // If encryption/key is the issue, route to import screen.
           if (!(await hasPrivateKey())) {
             requireKeyImport();
@@ -421,11 +456,102 @@ export function ChatRoom() {
             prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)),
           );
         } finally {
-          setSending(false);
+          if (manageSendingState) {
+            setSending(false);
+          }
         }
       })();
+
+      return tempId;
     },
     [conversationId, requireKeyImport],
+  );
+
+  const runAttachmentSend = useCallback(
+    async (file: File, existingId?: string) => {
+      const myId = myUserIdRef.current;
+      if (!myId) return;
+
+      setAttachError(null);
+      setAttachUploading(true);
+
+      const tempId =
+        existingId ??
+        `local:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+      const previewUrl = URL.createObjectURL(file);
+      pendingFileRef.current.set(tempId, file);
+
+      if (!existingId) {
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === tempId)) return prev;
+          return [
+            ...prev,
+            {
+              id: tempId,
+              senderId: myId,
+              body: "",
+              createdAt: new Date().toISOString(),
+              localPreviewUrl: previewUrl,
+            },
+          ];
+        });
+      } else {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === existingId
+              ? {
+                  ...m,
+                  failed: false,
+                  localPreviewUrl: m.localPreviewUrl ?? previewUrl,
+                }
+              : m,
+          ),
+        );
+      }
+
+      try {
+        const processed = await processImageForSend(file);
+        const { ciphertext, fileKey, nonce } = await encryptFile(processed.bytes);
+        const path = await uploadEncryptedAttachment(ciphertext, myId);
+        const body = buildAttachmentBody({
+          v: 1,
+          kind: "image",
+          path,
+          key: fileKey,
+          nonce,
+          mime: "image/jpeg",
+          size: processed.bytes.length,
+          w: processed.w,
+          h: processed.h,
+        });
+
+        sendPlaintext(body, tempId, {
+          manageSendingState: false,
+          preservePreview: true,
+        });
+      } catch (err) {
+        if (err instanceof ImageTooLargeError) {
+          setAttachError(err.message);
+          URL.revokeObjectURL(previewUrl);
+          setMessages((prev) => prev.filter((m) => m.id !== tempId));
+          pendingFileRef.current.delete(tempId);
+          return;
+        }
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)),
+        );
+      } finally {
+        setAttachUploading(false);
+      }
+    },
+    [sendPlaintext],
+  );
+
+  const handlePhotoSelected = useCallback(
+    (file: File) => {
+      void runAttachmentSend(file);
+    },
+    [runAttachmentSend],
   );
 
   const handleSend = useCallback(
@@ -437,11 +563,16 @@ export function ChatRoom() {
 
   const handleRetry = useCallback(
     (id: string) => {
+      const file = pendingFileRef.current.get(id);
+      if (file) {
+        void runAttachmentSend(file, id);
+        return;
+      }
       const msg = messagesRef.current.find((m) => m.id === id);
       if (!msg) return;
       sendPlaintext(msg.body, id);
     },
-    [sendPlaintext],
+    [sendPlaintext, runAttachmentSend],
   );
 
   if (status === "loading") {
@@ -585,6 +716,7 @@ export function ChatRoom() {
                         !initialMessageIdsRef.current.has(m.id)
                       }
                       failed={m.failed}
+                      localPreviewUrl={m.localPreviewUrl}
                       onRetry={handleRetry}
                     />
                   </li>
@@ -596,7 +728,13 @@ export function ChatRoom() {
         </div>
       </div>
 
-      <ChatComposer onSend={handleSend} disabled={sending} />
+      <ChatComposer
+        onSend={handleSend}
+        onPhotoSelected={handlePhotoSelected}
+        disabled={sending}
+        attachDisabled={attachUploading}
+        attachError={attachError}
+      />
 
       {contactDetailOpen && otherUserId ? (
         <ContactDetail
