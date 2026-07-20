@@ -75,6 +75,9 @@ export function AuthTextField({
   minLength,
   error,
   hint,
+  enterKeyHint,
+  inputRef,
+  onEnterKey,
 }: {
   id: string;
   name: string;
@@ -88,6 +91,10 @@ export function AuthTextField({
   minLength?: number;
   error?: string | null;
   hint?: string | null;
+  enterKeyHint?: React.InputHTMLAttributes<HTMLInputElement>["enterKeyHint"];
+  inputRef?: React.Ref<HTMLInputElement>;
+  /** When set, Enter is preventDefault'd and this runs (e.g. focus next field). */
+  onEnterKey?: () => void;
 }) {
   const [visible, setVisible] = useState(false);
   const isPassword = type === "password";
@@ -100,12 +107,23 @@ export function AuthTextField({
         <input
           id={id}
           name={name}
+          ref={inputRef}
           type={inputType}
           autoComplete={autoComplete}
+          enterKeyHint={enterKeyHint}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onBlur={onBlur}
           onFocus={scrollAuthFieldIntoView}
+          onKeyDown={
+            onEnterKey
+              ? (e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  onEnterKey();
+                }
+              : undefined
+          }
           className={`${inputClassName}${isPassword ? " pr-12" : ""}`}
           required={required}
           minLength={minLength}

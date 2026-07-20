@@ -161,47 +161,56 @@ export function WrapSetupBanner({ userId }: { userId: string }) {
               Confirm your password to enable restoring messages with it on new
               devices.
             </p>
-            <input
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Your password"
-              className="mt-[var(--sp-4)] h-12 w-full rounded-[var(--radius-input)] border border-[var(--divider)] bg-[var(--surface)] px-[var(--sp-4)] text-[16px] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none focus:border-[var(--accent)]"
-            />
-            {error ? (
-              <p
-                className="mt-[var(--sp-2)] text-[length:var(--text-secondary-size)] text-[var(--destructive)]"
-                role="alert"
-              >
-                {error}
-              </p>
-            ) : null}
-            <div className="mt-[var(--sp-4)] flex gap-[var(--sp-2)]">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => setSheetOpen(false)}
-                className="pressable flex min-h-11 flex-1 items-center justify-center rounded-[var(--radius-input)] text-[length:var(--text-body)] font-medium text-[var(--text-primary)] disabled:opacity-40"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={busy || !password}
-                onClick={() => void onConfirm()}
-                className="pressable flex min-h-11 flex-1 items-center justify-center gap-[var(--sp-2)] rounded-[var(--radius-input)] bg-[var(--accent)] text-[length:var(--text-body)] font-semibold text-white disabled:opacity-40"
-              >
-                {busy ? (
-                  <>
-                    <InlineSpinner className="h-4 w-4" />
-                    Enabling…
-                  </>
-                ) : (
-                  "Confirm"
-                )}
-              </button>
-            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const active = document.activeElement;
+                if (active instanceof HTMLElement) active.blur();
+                void onConfirm();
+              }}
+            >
+              <input
+                type="password"
+                autoComplete="current-password"
+                enterKeyHint="done"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Your password"
+                className="mt-[var(--sp-4)] h-12 w-full rounded-[var(--radius-input)] border border-[var(--divider)] bg-[var(--surface)] px-[var(--sp-4)] text-[16px] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none focus:border-[var(--accent)]"
+              />
+              {error ? (
+                <p
+                  className="mt-[var(--sp-2)] text-[length:var(--text-secondary-size)] text-[var(--destructive)]"
+                  role="alert"
+                >
+                  {error}
+                </p>
+              ) : null}
+              <div className="mt-[var(--sp-4)] flex gap-[var(--sp-2)]">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setSheetOpen(false)}
+                  className="pressable flex min-h-11 flex-1 items-center justify-center rounded-[var(--radius-input)] text-[length:var(--text-body)] font-medium text-[var(--text-primary)] disabled:opacity-40"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={busy || !password}
+                  className="pressable flex min-h-11 flex-1 items-center justify-center gap-[var(--sp-2)] rounded-[var(--radius-input)] bg-[var(--accent)] text-[length:var(--text-body)] font-semibold text-white disabled:opacity-40"
+                >
+                  {busy ? (
+                    <>
+                      <InlineSpinner className="h-4 w-4" />
+                      Enabling…
+                    </>
+                  ) : (
+                    "Confirm"
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       ) : null}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   AuthBrandHeader,
   AuthFooterLink,
@@ -56,6 +56,11 @@ function isStep1Valid(username: string, password: string, confirm: string): bool
   );
 }
 
+function blurActiveElement() {
+  const active = document.activeElement;
+  if (active instanceof HTMLElement) active.blur();
+}
+
 export function SignupForm() {
   const router = useRouter();
   const [step, setStep] = useState<1 | 2>(1);
@@ -67,6 +72,8 @@ export function SignupForm() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const confirmRef = useRef<HTMLInputElement>(null);
 
   const strength = useMemo(() => passwordStrengthHint(password), [password]);
   const step1Valid = isStep1Valid(username, password, confirm);
@@ -80,6 +87,12 @@ export function SignupForm() {
     if (Object.keys(errors).length === 0) {
       setStep(2);
     }
+  }
+
+  function onStep1Submit(e: React.FormEvent) {
+    e.preventDefault();
+    blurActiveElement();
+    handleContinue();
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -173,7 +186,7 @@ export function SignupForm() {
 
   if (step === 1) {
     return (
-      <div>
+      <form onSubmit={onStep1Submit} noValidate>
         <AuthBrandHeader subtitle="Private messaging. End-to-end encrypted." />
         <AuthScreenHeading title="Create your account" progress="1 of 2" />
 
@@ -183,6 +196,7 @@ export function SignupForm() {
             name="username"
             label="Username"
             autoComplete="username"
+            enterKeyHint="next"
             value={username}
             onChange={(value) => {
               setUsername(value.toLowerCase());
@@ -198,6 +212,7 @@ export function SignupForm() {
                 }));
               }
             }}
+            onEnterKey={() => passwordRef.current?.focus()}
             error={fieldErrors.username}
             required
           />
@@ -208,6 +223,8 @@ export function SignupForm() {
             label="Password"
             type="password"
             autoComplete="new-password"
+            enterKeyHint="next"
+            inputRef={passwordRef}
             value={password}
             onChange={(value) => {
               setPassword(value);
@@ -226,6 +243,7 @@ export function SignupForm() {
                 }));
               }
             }}
+            onEnterKey={() => confirmRef.current?.focus()}
             error={fieldErrors.password}
             hint={strength || null}
             required
@@ -238,6 +256,8 @@ export function SignupForm() {
             label="Confirm password"
             type="password"
             autoComplete="new-password"
+            enterKeyHint="done"
+            inputRef={confirmRef}
             value={confirm}
             onChange={(value) => {
               setConfirm(value);
@@ -261,11 +281,7 @@ export function SignupForm() {
         </div>
 
         <div className="mt-[var(--sp-6)]">
-          <AuthPrimaryButton
-            type="button"
-            disabled={!step1Valid}
-            onClick={handleContinue}
-          >
+          <AuthPrimaryButton type="submit" disabled={!step1Valid}>
             Continue
           </AuthPrimaryButton>
         </div>
@@ -277,7 +293,7 @@ export function SignupForm() {
             href="/login"
           />
         </div>
-      </div>
+      </form>
     );
   }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   AuthBrandHeader,
   AuthFooterLink,
@@ -13,6 +13,11 @@ import { usernameToAuthEmail, validateUsername } from "@/lib/auth-email";
 import { createClient } from "@/lib/supabase/client";
 import { tryRestoreKeyFromPassword } from "@/lib/wrappedKeys";
 
+function blurActiveElement() {
+  const active = document.activeElement;
+  if (active instanceof HTMLElement) active.blur();
+}
+
 export function LoginForm() {
   const router = useRouter();
   const [username, setUsername] = useState("");
@@ -21,9 +26,11 @@ export function LoginForm() {
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const passwordRef = useRef<HTMLInputElement>(null);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    blurActiveElement();
     setUsernameError(null);
     setGeneralError(null);
 
@@ -67,7 +74,7 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={onSubmit}>
+    <form onSubmit={onSubmit} noValidate>
       <AuthBrandHeader subtitle="Private messaging. End-to-end encrypted." />
       <AuthScreenHeading title="Log in" />
 
@@ -77,6 +84,7 @@ export function LoginForm() {
           name="username"
           label="Username"
           autoComplete="username"
+          enterKeyHint="next"
           value={username}
           onChange={(value) => {
             setUsername(value.toLowerCase());
@@ -87,6 +95,7 @@ export function LoginForm() {
               setUsernameError(validateUsername(username));
             }
           }}
+          onEnterKey={() => passwordRef.current?.focus()}
           error={usernameError}
           required
         />
@@ -97,6 +106,8 @@ export function LoginForm() {
           label="Password"
           type="password"
           autoComplete="current-password"
+          enterKeyHint="go"
+          inputRef={passwordRef}
           value={password}
           onChange={setPassword}
           required
