@@ -2,10 +2,23 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { AvatarPicker } from "@/components/avatar-picker";
+import {
+  ChevronLeftIcon,
+  InfoIcon,
+  KeyIcon,
+  MoonIcon,
+  PencilIcon,
+  PersonIcon,
+  QrCodeIcon,
+} from "@/components/icons";
 import { KeyTransferModal } from "@/components/key-transfer-modal";
-import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
+import {
+  SettingsConfirmDialog,
+  SettingsRow,
+  SettingsSection,
+} from "@/components/settings-ui";
 import { useProfile } from "@/components/profile-context";
 import { Avatar } from "@/lib/avatars";
 import { invalidatePrivateKeyCache, loadPrivateKey } from "@/lib/keystore";
@@ -31,75 +44,6 @@ async function downloadKeyBackup(): Promise<{ ok: true } | { ok: false; error: s
   } catch {
     return { ok: false, error: "Could not export your key." };
   }
-}
-
-function SettingsSection({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <section>
-      <h2 className="mb-2 px-1 text-[12px] font-medium uppercase tracking-wide text-[#6E6963]">
-        {title}
-      </h2>
-      <div className="overflow-hidden rounded-2xl border border-[#2E2B28] bg-[#1A1816]">
-        {children}
-      </div>
-    </section>
-  );
-}
-
-function SettingsRow({
-  label,
-  value,
-  onClick,
-  chevron = false,
-  destructive = false,
-  disabled = false,
-}: {
-  label: string;
-  value?: string;
-  onClick?: () => void;
-  chevron?: boolean;
-  destructive?: boolean;
-  disabled?: boolean;
-}) {
-  const Tag = onClick ? "button" : "div";
-  return (
-    <Tag
-      type={onClick ? "button" : undefined}
-      onClick={onClick}
-      disabled={disabled}
-      className={`flex min-h-[44px] w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors duration-150 ease-in-out ${
-        onClick
-          ? destructive
-            ? "text-red-400 hover:bg-[#242220]/50 active:bg-[#242220]"
-            : "text-[#FAFAF9] hover:bg-[#242220]/50 active:bg-[#242220]"
-          : "text-[#FAFAF9]"
-      } disabled:opacity-40`}
-    >
-      <span
-        className={`text-[15px] ${destructive ? "font-medium text-red-400" : ""}`}
-      >
-        {label}
-      </span>
-      <span className="flex shrink-0 items-center gap-2">
-        {value ? (
-          <span className="text-[14px] text-[#6E6963]">{value}</span>
-        ) : null}
-        {chevron ? (
-          <ChevronRightIcon className="h-4 w-4 text-[#6E6963]" />
-        ) : null}
-      </span>
-    </Tag>
-  );
-}
-
-function RowDivider() {
-  return <div className="mx-4 h-px bg-[#2E2B28]" />;
 }
 
 export function SettingsPanel() {
@@ -169,94 +113,111 @@ export function SettingsPanel() {
   const displayUsername = username ? `@${username}` : "";
 
   return (
-    <div className="flex h-app min-h-0 w-full flex-col overflow-hidden bg-[#0F0E0D] md:h-full md:flex-1">
-      <header className="safe-pt shrink-0 border-b border-[#2E2B28] bg-[#1A1816] md:hidden">
-        <div className="flex h-12 items-center gap-1 px-2">
+    <div className="flex h-app min-h-0 w-full flex-col overflow-hidden bg-[var(--bg)] md:h-full md:flex-1">
+      <header className="safe-pt shrink-0 border-b border-[var(--divider)] bg-[var(--bg)] md:hidden">
+        <div className="flex h-[52px] items-center gap-[var(--sp-1)] px-[var(--sp-2)]">
           <Link
             href="/chats"
             aria-label="Back to chats"
-            className="flex h-11 w-11 items-center justify-center rounded-full text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9]"
+            className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--text-secondary)] transition-opacity duration-150 ease-in-out active:opacity-70"
           >
             <ChevronLeftIcon className="h-5 w-5" />
           </Link>
-          <span className="text-[15px] font-semibold text-[#FAFAF9]">
+          <span className="text-[length:var(--text-title)] font-semibold text-[var(--text-primary)]">
             Profile
           </span>
         </div>
       </header>
 
       <div className="safe-pb min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-xl space-y-6 p-4 sm:p-6">
-        <div className="flex flex-col items-center pt-4 md:pt-6">
-          <button
-            type="button"
-            aria-label="Edit avatar"
-            onClick={() => setEditingAvatar(true)}
-            className="group relative rounded-full transition-opacity duration-150 ease-in-out active:opacity-80"
-          >
-            <Avatar avatarId={avatarId} size={96} />
-            <span className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full border-2 border-[#1A1816] bg-[#EA580C] text-white">
-              <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden>
-                <path
-                  d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0 0-3L16.5 4.5a2.1 2.1 0 0 0-3 0L3 15v5z"
-                  stroke="currentColor"
-                  strokeWidth="1.75"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
-          </button>
-          {displayUsername ? (
-            <p className="mt-4 text-[22px] font-semibold leading-[1.3] text-[#FAFAF9]">
-              {displayUsername}
+        <div className="mx-auto w-full max-w-xl px-[var(--sp-4)] pb-[var(--sp-6)] sm:px-[var(--sp-6)]">
+          <div className="flex flex-col items-center pt-[var(--sp-6)]">
+            <button
+              type="button"
+              aria-label="Edit avatar"
+              onClick={() => setEditingAvatar(true)}
+              className="relative flex h-[88px] w-[88px] items-center justify-center transition-opacity duration-150 ease-in-out active:opacity-80"
+            >
+              <Avatar avatarId={avatarId} size={88} />
+              <span className="absolute -bottom-0.5 -right-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent)] text-white ring-2 ring-[var(--bg)]">
+                <PencilIcon className="h-3.5 w-3.5" />
+              </span>
+            </button>
+            {displayUsername ? (
+              <p className="mt-[var(--sp-3)] text-[length:var(--text-title-lg)] font-bold leading-tight text-[var(--text-primary)]">
+                {displayUsername}
+              </p>
+            ) : null}
+          </div>
+
+          <SettingsSection title="Account">
+            <SettingsRow
+              icon={<PersonIcon />}
+              label="Username"
+              value={displayUsername || "—"}
+              isLast={false}
+            />
+            <SettingsRow
+              icon={<KeyIcon />}
+              label="Key backup"
+              chevron
+              onClick={handleKeyBackup}
+              isLast={false}
+            />
+            <SettingsRow
+              icon={<QrCodeIcon />}
+              label="Transfer key"
+              chevron
+              onClick={() => setTransferOpen(true)}
+              isLast
+            />
+          </SettingsSection>
+
+          {backupMessage ? (
+            <p
+              className="mt-[var(--sp-2)] text-center text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]"
+              role="status"
+            >
+              {backupMessage}
             </p>
           ) : null}
+          {backupError ? (
+            <p
+              className="mt-[var(--sp-2)] text-center text-[length:var(--text-secondary-size)] text-[var(--destructive)]"
+              role="alert"
+            >
+              {backupError}
+            </p>
+          ) : null}
+
+          <SettingsSection title="Appearance">
+            <SettingsRow
+              icon={<MoonIcon />}
+              label="Theme"
+              value="Dark"
+              isLast
+            />
+          </SettingsSection>
+
+          <SettingsSection title="About">
+            <SettingsRow
+              icon={<InfoIcon />}
+              label="Version"
+              value={APP_VERSION}
+              isLast
+            />
+          </SettingsSection>
+
+          <div className="mt-[var(--sp-6)] overflow-hidden rounded-[var(--radius-card)] bg-[var(--surface)]">
+            <SettingsRow
+              label="Log out"
+              destructive
+              onClick={() => setLogoutOpen(true)}
+              disabled={loggingOut}
+              isLast
+            />
+          </div>
         </div>
-
-        <SettingsSection title="Account">
-          <SettingsRow label="Username" value={displayUsername || "—"} />
-          <RowDivider />
-          <SettingsRow
-            label="Key backup"
-            chevron
-            onClick={handleKeyBackup}
-          />
-          <RowDivider />
-          <SettingsRow
-            label="Transfer key to another device"
-            chevron
-            onClick={() => setTransferOpen(true)}
-          />
-        </SettingsSection>
-
-        {backupMessage ? (
-          <p className="text-center text-[13px] text-[#6E6963]" role="status">
-            {backupMessage}
-          </p>
-        ) : null}
-        {backupError ? (
-          <p className="text-center text-[13px] text-red-400" role="alert">
-            {backupError}
-          </p>
-        ) : null}
-
-        <SettingsSection title="Appearance">
-          <SettingsRow label="Theme" value="Dark" />
-        </SettingsSection>
-
-        <SettingsSection title="About">
-          <SettingsRow label="Version" value={APP_VERSION} />
-        </SettingsSection>
-
-        <div className="overflow-hidden rounded-2xl border border-[#2E2B28] bg-[#1A1816]">
-          <SettingsRow
-            label="Log out"
-            destructive
-            onClick={() => setLogoutOpen(true)}
-            disabled={loggingOut}
-          />
-        </div>
-      </div>
       </div>
 
       {editingAvatar ? (
@@ -271,33 +232,40 @@ export function SettingsPanel() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="avatar-picker-title"
-            className="safe-pb relative z-10 w-full max-w-md rounded-t-2xl border border-[#2E2B28] bg-[#1A1816] p-5 sm:rounded-2xl"
+            className="safe-pb relative z-10 w-full max-w-md rounded-t-[var(--radius-sheet)] bg-[var(--surface-elevated)] sm:rounded-[var(--radius-sheet)]"
           >
-            <p
-              id="avatar-picker-title"
-              className="text-[15px] font-semibold text-[#FAFAF9]"
-            >
-              Choose an avatar
-            </p>
-            <p className="mt-1 text-[13px] text-[#6E6963]">
-              Pick one of 12 preset avatars
-            </p>
-            <div className="mt-4">
+            <div className="flex justify-center pt-[var(--sp-2)]">
+              <div className="h-1 w-9 rounded-full bg-[var(--divider)]" />
+            </div>
+            <div className="px-[var(--sp-4)] pt-[var(--sp-3)]">
+              <p
+                id="avatar-picker-title"
+                className="text-[length:var(--text-title)] font-semibold text-[var(--text-primary)]"
+              >
+                Choose an avatar
+              </p>
+              <p className="mt-[var(--sp-1)] text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]">
+                Pick one of 12 preset avatars
+              </p>
+            </div>
+            <div className="p-[var(--sp-4)]">
               <AvatarPicker
                 value={avatarId}
                 onChange={updateAvatar}
-                size={48}
+                size={60}
                 showLabels={false}
                 columns="settings"
               />
             </div>
             {avatarSaving ? (
-              <p className="mt-3 text-[13px] text-[#6E6963]">Saving…</p>
+              <p className="px-[var(--sp-4)] pb-[var(--sp-2)] text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]">
+                Saving…
+              </p>
             ) : null}
             <button
               type="button"
               onClick={() => setEditingAvatar(false)}
-              className="mt-4 flex min-h-[44px] w-full items-center justify-center rounded-xl text-[14px] font-medium text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9]"
+              className="flex min-h-11 w-full items-center justify-center text-[length:var(--text-body)] text-[var(--text-primary)] transition-opacity duration-150 ease-in-out active:opacity-70"
             >
               Cancel
             </button>
@@ -310,53 +278,16 @@ export function SettingsPanel() {
       ) : null}
 
       {logoutOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <button
-            type="button"
-            aria-label="Close"
-            className="absolute inset-0 bg-black/60"
-            onClick={() => setLogoutOpen(false)}
-          />
-          <div
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="logout-title"
-            aria-describedby="logout-desc"
-            className="relative z-10 w-full max-w-sm rounded-2xl border border-[#2E2B28] bg-[#1A1816] p-5"
-          >
-            <p
-              id="logout-title"
-              className="text-[17px] font-semibold text-[#FAFAF9]"
-            >
-              Log out?
-            </p>
-            <p
-              id="logout-desc"
-              className="mt-2 text-[14px] leading-[1.4] text-[#6E6963]"
-            >
-              Make sure you&apos;ve saved your key backup. Without it you cannot
-              restore your messages.
-            </p>
-            <div className="mt-5 flex gap-2">
-              <button
-                type="button"
-                onClick={() => setLogoutOpen(false)}
-                disabled={loggingOut}
-                className="flex min-h-[44px] flex-1 items-center justify-center rounded-xl text-[14px] font-medium text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9] disabled:opacity-40"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmLogout}
-                disabled={loggingOut}
-                className="flex min-h-[44px] flex-1 items-center justify-center rounded-xl bg-red-600 text-[14px] font-medium text-white transition-colors duration-150 ease-in-out hover:bg-red-700 disabled:opacity-40"
-              >
-                {loggingOut ? "Logging out…" : "Log out"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <SettingsConfirmDialog
+          title="Log out?"
+          description="Make sure you've saved your key backup. Without it you cannot restore your messages."
+          confirmLabel={loggingOut ? "Logging out…" : "Log out"}
+          cancelLabel="Cancel"
+          onConfirm={confirmLogout}
+          onCancel={() => setLogoutOpen(false)}
+          confirming={loggingOut}
+          destructive
+        />
       ) : null}
     </div>
   );

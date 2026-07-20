@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
+import { ChevronLeftIcon, PersonIcon } from "@/components/icons";
 import { useNicknames } from "@/components/nicknames-context";
+import { SettingsRow, SettingsSection } from "@/components/settings-ui";
 import { Avatar } from "@/lib/avatars";
 import {
   displayName,
@@ -11,39 +12,6 @@ import {
 } from "@/lib/display-name";
 
 const NICKNAME_MAX = 30;
-
-function SettingsRow({
-  label,
-  value,
-  onClick,
-  chevron = false,
-}: {
-  label: string;
-  value?: string;
-  onClick?: () => void;
-  chevron?: boolean;
-}) {
-  const Tag = onClick ? "button" : "div";
-  return (
-    <Tag
-      type={onClick ? "button" : undefined}
-      onClick={onClick}
-      className="flex min-h-[44px] w-full items-center justify-between gap-3 px-4 py-3 text-left text-[#FAFAF9] transition-colors duration-150 ease-in-out hover:bg-[#242220]/50 active:bg-[#242220]"
-    >
-      <span className="text-[15px]">{label}</span>
-      <span className="flex shrink-0 items-center gap-2">
-        {value ? (
-          <span className="max-w-[160px] truncate text-[14px] text-[#6E6963]">
-            {value}
-          </span>
-        ) : null}
-        {chevron ? (
-          <ChevronRightIcon className="h-4 w-4 text-[#6E6963]" />
-        ) : null}
-      </span>
-    </Tag>
-  );
-}
 
 function NicknameSheet({
   initial,
@@ -78,11 +46,14 @@ function NicknameSheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby="nickname-editor-title"
-        className="safe-pb relative w-full rounded-t-2xl border border-[#2E2B28] bg-[#1A1816] p-5"
+        className="safe-pb relative w-full rounded-t-[var(--radius-sheet)] bg-[var(--surface-elevated)] p-[var(--sp-5)]"
       >
+        <div className="flex justify-center pb-[var(--sp-2)]">
+          <div className="h-1 w-9 rounded-full bg-[var(--divider)]" />
+        </div>
         <p
           id="nickname-editor-title"
-          className="text-[15px] font-semibold text-[#FAFAF9]"
+          className="text-[length:var(--text-title)] font-semibold text-[var(--text-primary)]"
         >
           Nickname
         </p>
@@ -92,19 +63,25 @@ function NicknameSheet({
           onChange={(e) => setValue(e.target.value.slice(0, NICKNAME_MAX))}
           placeholder="Add a nickname"
           autoComplete="off"
-          className="mt-4 h-12 w-full rounded-xl border border-[#2E2B28] bg-[#242220] px-4 text-[16px] text-[#FAFAF9] placeholder:text-[#6E6963] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
+          onFocus={(e) =>
+            e.target.scrollIntoView({ block: "nearest", behavior: "smooth" })
+          }
+          className="mt-[var(--sp-4)] h-12 w-full rounded-[var(--radius-input)] border border-[var(--divider)] bg-[var(--surface)] px-[var(--sp-4)] text-[length:var(--text-body)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[var(--accent)]"
         />
         {error ? (
-          <p className="mt-2 text-[13px] text-red-400" role="alert">
+          <p
+            className="mt-[var(--sp-2)] text-[length:var(--text-secondary-size)] text-[var(--destructive)]"
+            role="alert"
+          >
             {error}
           </p>
         ) : null}
-        <div className="mt-4 flex gap-2">
+        <div className="mt-[var(--sp-4)] flex gap-[var(--sp-2)]">
           <button
             type="button"
             disabled={busy}
             onClick={onClose}
-            className="flex min-h-[44px] flex-1 items-center justify-center rounded-xl text-[14px] font-medium text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9] disabled:opacity-40"
+            className="flex min-h-11 flex-1 items-center justify-center rounded-[var(--radius-input)] text-[length:var(--text-body)] font-medium text-[var(--text-primary)] transition-opacity duration-150 ease-in-out active:opacity-70 disabled:opacity-40"
           >
             Cancel
           </button>
@@ -126,7 +103,7 @@ function NicknameSheet({
                   }
                 })();
               }}
-              className="flex min-h-[44px] flex-1 items-center justify-center rounded-xl text-[14px] font-medium text-red-400 transition-colors duration-150 ease-in-out hover:bg-[#242220] disabled:opacity-40"
+              className="flex min-h-11 flex-1 items-center justify-center rounded-[var(--radius-input)] text-[length:var(--text-body)] font-medium text-[var(--destructive)] transition-opacity duration-150 ease-in-out active:opacity-70 disabled:opacity-40"
             >
               Clear
             </button>
@@ -148,7 +125,7 @@ function NicknameSheet({
                 }
               })();
             }}
-            className="flex min-h-[44px] flex-1 items-center justify-center rounded-xl bg-[#EA580C] text-[14px] font-medium text-white transition-colors duration-150 ease-in-out hover:bg-[#C2410C] disabled:opacity-40"
+            className="flex min-h-11 flex-1 items-center justify-center rounded-[var(--radius-input)] bg-[var(--accent)] text-[length:var(--text-body)] font-semibold text-white transition-colors duration-150 ease-in-out active:bg-[var(--accent-pressed)] disabled:opacity-40"
           >
             Save
           </button>
@@ -186,52 +163,54 @@ export function ContactDetail({
   const showUsernameSubtitle = hasNickname(identity);
 
   return (
-    <div className="fixed inset-x-0 top-0 z-50 flex h-app flex-col md:inset-0 md:items-center md:justify-center md:bg-black/60 md:p-4">
+    <div className="fixed inset-x-0 top-0 z-50 flex h-app flex-col md:inset-0 md:items-center md:justify-center md:bg-black/60 md:p-[var(--sp-4)]">
       <button
         type="button"
         aria-label="Close contact detail"
         className="absolute inset-0 hidden md:block"
         onClick={onClose}
       />
-      <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#0F0E0D] md:h-auto md:max-h-[90dvh] md:max-w-md md:rounded-2xl md:border md:border-[#2E2B28] md:bg-[#1A1816]">
-        <header className="safe-pt shrink-0 border-b border-[#2E2B28] bg-[#1A1816] md:rounded-t-2xl">
-          <div className="flex h-12 items-center gap-1 px-2">
+      <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-[var(--bg)] md:h-auto md:max-h-[90dvh] md:max-w-md md:rounded-[var(--radius-card)] md:bg-[var(--surface-elevated)]">
+        <header className="safe-pt shrink-0 border-b border-[var(--divider)] bg-[var(--bg)] md:rounded-t-[var(--radius-card)] md:bg-[var(--surface-elevated)]">
+          <div className="flex h-[52px] items-center gap-[var(--sp-1)] px-[var(--sp-2)]">
             <button
               type="button"
               aria-label="Back"
               onClick={onClose}
-              className="flex h-11 w-11 items-center justify-center rounded-full text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9]"
+              className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--text-secondary)] transition-opacity duration-150 ease-in-out active:opacity-70"
             >
               <ChevronLeftIcon className="h-5 w-5" />
             </button>
-            <span className="text-[15px] font-semibold text-[#FAFAF9]">
+            <span className="text-[length:var(--text-title)] font-semibold text-[var(--text-primary)]">
               Contact
             </span>
           </div>
         </header>
 
         <div className="safe-pb min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-md space-y-6 p-4 sm:p-6">
-            <div className="flex flex-col items-center pt-4">
-              <Avatar avatarId={avatarId} size={96} />
-              <p className="mt-4 text-center text-[22px] font-semibold leading-[1.3] text-[#FAFAF9]">
+          <div className="mx-auto w-full max-w-md px-[var(--sp-4)] pb-[var(--sp-6)] sm:px-[var(--sp-6)]">
+            <div className="flex flex-col items-center pt-[var(--sp-6)]">
+              <Avatar avatarId={avatarId} size={88} />
+              <p className="mt-[var(--sp-3)] text-center text-[length:var(--text-title-lg)] font-bold leading-tight text-[var(--text-primary)]">
                 {titled}
               </p>
               {showUsernameSubtitle ? (
-                <p className="mt-1 text-[14px] text-[#6E6963]">
+                <p className="mt-[var(--sp-1)] text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]">
                   {formatAtUsername(username)}
                 </p>
               ) : null}
             </div>
 
-            <div className="overflow-hidden rounded-2xl border border-[#2E2B28] bg-[#1A1816]">
+            <SettingsSection title="Details">
               <SettingsRow
+                icon={<PersonIcon />}
                 label="Nickname"
                 value={nickname ?? "None"}
                 chevron
                 onClick={() => setEditingNickname(true)}
+                isLast
               />
-            </div>
+            </SettingsSection>
           </div>
         </div>
 
