@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { ChatList } from "@/components/chat-list";
 import { Logo } from "@/components/logo";
 import { LockIcon } from "@/components/icons";
-import { Avatar, DEFAULT_AVATAR_ID } from "@/lib/avatars";
-import { createClient } from "@/lib/supabase/client";
+import { useProfile } from "@/components/profile-context";
+import { Avatar } from "@/lib/avatars";
 import { useVisualViewport } from "@/hooks/useVisualViewport";
 
 function EmptyChatPane() {
@@ -25,38 +25,15 @@ function EmptyChatPane() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const [avatarId, setAvatarId] = useState<string>(DEFAULT_AVATAR_ID);
+  const { avatarId } = useProfile();
 
   useVisualViewport();
 
   const isChatList = pathname === "/chats";
+  const isSettings = pathname === "/settings";
   const activeConversationId = pathname.startsWith("/chats/")
     ? pathname.slice("/chats/".length).split("/")[0] || null
     : null;
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user || cancelled) return;
-
-      const { data } = await supabase
-        .from("profiles")
-        .select("avatar_id")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      if (!cancelled && data?.avatar_id) {
-        setAvatarId(data.avatar_id as string);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   return (
     <div className="safe-px flex h-app w-full overflow-hidden bg-[#0F0E0D]">
@@ -71,8 +48,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Logo href="/chats" size="sm" markSize={20} />
               <Link
                 href="/settings"
-                aria-label="Settings"
-                className="flex h-11 w-11 items-center justify-center rounded-full transition-colors duration-150 ease-in-out hover:bg-[#242220]"
+                aria-label="Profile and settings"
+                className="flex h-11 w-11 items-center justify-center rounded-full transition-colors duration-150 ease-in-out hover:bg-[#242220] active:bg-[#242220]"
               >
                 <Avatar avatarId={avatarId} size={32} />
               </Link>
@@ -84,10 +61,10 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <main
           className={`min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#0F0E0D] ${
-            isChatList ? "hidden md:flex" : "flex"
+            isChatList && !isSettings ? "hidden md:flex" : "flex"
           }`}
         >
-          {isChatList ? <EmptyChatPane /> : children}
+          {isChatList && !isSettings ? <EmptyChatPane /> : children}
         </main>
       </div>
     </div>

@@ -1,15 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NewChatModal } from "@/components/new-chat-modal";
 import { LockIcon, PencilIcon } from "@/components/icons";
+import { useNicknames } from "@/components/nicknames-context";
 import { formatListTime } from "@/lib/chat";
+import { contactMatchesQuery, displayName } from "@/lib/display-name";
 import { Avatar, AVATARS } from "@/lib/avatars";
 import { createClient } from "@/lib/supabase/client";
 
 type ConversationRow = {
   id: string;
+  otherUserId: string;
   otherUsername: string;
   otherAvatarId: string | null;
   lastActivity: string;
@@ -39,15 +42,19 @@ const ConversationRowItem = memo(function ConversationRowItem({
   id,
   otherUsername,
   otherAvatarId,
+  nickname,
   lastActivity,
   active,
 }: {
   id: string;
   otherUsername: string;
   otherAvatarId: string | null;
+  nickname: string | null;
   lastActivity: string;
   active: boolean;
 }) {
+  const label = displayName({ username: otherUsername, nickname });
+
   return (
     <Link
       href={`/chats/${id}`}
@@ -61,7 +68,7 @@ const ConversationRowItem = memo(function ConversationRowItem({
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
           <p className="truncate text-[14px] font-medium text-[#FAFAF9]">
-            {otherUsername}
+            {label}
           </p>
           <span className="shrink-0 text-[11px] text-[#6E6963]">
             {formatListTime(lastActivity)}
@@ -81,10 +88,12 @@ export function ChatList({
 }: {
   activeConversationId?: string | null;
 }) {
+  const { nicknames, loaded: nicknamesLoaded, loadNicknames } = useNicknames();
   const [composeOpen, setComposeOpen] = useState(false);
   const [loadingList, setLoadingList] = useState(true);
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [listError, setListError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [myUserId, setMyUserId] = useState<string | null>(null);
 
   const conversationsRef = useRef(conversations);
@@ -136,23 +145,25 @@ export function ChatList({
       setMyUserId(user.id);
       myUserIdRef.current = user.id;
 
-      const { data: rows, error: convError } = await supabase
-        .from("conversations")
-        .select("id, participant_a, participant_b, created_at")
-        .or(`participant_a.eq.${user.id},participant_b.eq.${user.id}`)
-        .order("created_at", { ascending: false });
+      const [convRows] = await Promise.all([
+        supabase
+          .from("conversations")
+          .select("id, participant_a, participant_b, created_at")
+          .or(`participant_a.eq.${user.id},participant_b.eq.${user.id}`)
+          .order("created_at", { ascending: false })
+          .then(({ data, error }) => {
+            if (error) throw error;
+            return data;
+          }),
+        loadNicknames(),
+      ]);
 
-      if (convError) {
-        setListError("Could not load conversations.");
-        return;
-      }
-
-      if (!rows || rows.length === 0) {
+      if (!convRows || convRows.length === 0) {
         setConversations([]);
         return;
       }
 
-      const otherIds = rows.map((row) =>
+      const otherIds = convRows.map((row) =>
         row.participant_a === user.id ? row.participant_b : row.participant_a,
       );
 
@@ -176,12 +187,11 @@ export function ChatList({
         ]),
       );
 
-      // Preserve fresher lastActivity from live events across soft refreshes.
       const prevById = new Map(
         conversationsRef.current.map((c) => [c.id, c.lastActivity]),
       );
 
-      const next = rows.map((row) => {
+      const next = convRows.map((row) => {
         const otherId =
           row.participant_a === user.id
             ? row.participant_b
@@ -196,7 +206,8 @@ export function ChatList({
 
         return {
           id: row.id as string,
-          otherUsername: profile?.username ?? "Unknown",
+          otherUserId: otherId as string,
+          otherUsername: profile?.username ?? "unknown",
           otherAvatarId: profile?.avatar_id ?? null,
           lastActivity,
         };
@@ -208,7 +219,7 @@ export function ChatList({
     } finally {
       setLoadingList(false);
     }
-  }, []);
+  }, [loadNicknames]);
 
   const upsertConversationFromRow = useCallback(
     async (row: ConversationInsert) => {
@@ -235,7 +246,8 @@ export function ChatList({
         return sortByActivity([
           {
             id: row.id,
-            otherUsername: (profile?.username as string) ?? "Unknown",
+            otherUserId: otherId,
+            otherUsername: (profile?.username as string) ?? "unknown",
             otherAvatarId: (profile?.avatar_id as string | null) ?? null,
             lastActivity: row.created_at,
           },
@@ -246,12 +258,24 @@ export function ChatList({
     [],
   );
 
-  // Initial fetch
+  const filteredConversations = useMemo(() => {
+    const q = searchQuery.trim();
+    if (!q) return conversations;
+    return conversations.filter((c) =>
+      contactMatchesQuery(
+        {
+          username: c.otherUsername,
+          nickname: nicknames[c.otherUserId] ?? null,
+        },
+        q,
+      ),
+    );
+  }, [conversations, nicknames, searchQuery]);
+
   useEffect(() => {
     void loadConversations();
   }, [loadConversations]);
 
-  // Global inbox realtime — conversations + messages for this user (RLS still applies)
   useEffect(() => {
     let cancelled = false;
     const supabase = createClient();
@@ -308,12 +332,10 @@ export function ChatList({
             );
 
             if (!known) {
-              // New thread we haven't listed yet (race with conversation INSERT) — full refresh.
               void loadConversations();
               return;
             }
 
-            // Debounced bump to top by last activity.
             const currentPending = pendingActivityRef.current.get(
               row.conversation_id,
             );
@@ -349,15 +371,22 @@ export function ChatList({
     };
   }, [loadConversations, upsertConversationFromRow, flushPendingActivities]);
 
+  const showLoading = loadingList || !nicknamesLoaded;
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div className="px-3 pb-2 pt-1">
-        <div className="flex h-9 items-center rounded-lg border border-[#2E2B28] bg-[#242220] px-3 text-[13px] text-[#6E6963]">
-          Search
-        </div>
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search"
+          autoComplete="off"
+          className="h-9 w-full rounded-lg border border-[#2E2B28] bg-[#242220] px-3 text-[16px] text-[#FAFAF9] placeholder:text-[#6E6963] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
+        />
       </div>
 
-      {loadingList ? (
+      {showLoading ? (
         <p className="px-3 py-6 text-[13px] text-[#6E6963]">Loading…</p>
       ) : listError ? (
         <p className="px-3 py-6 text-[13px] text-red-400" role="alert">
@@ -387,14 +416,17 @@ export function ChatList({
             Start a chat
           </button>
         </div>
+      ) : filteredConversations.length === 0 ? (
+        <p className="px-3 py-6 text-[13px] text-[#6E6963]">No matches.</p>
       ) : (
         <ul className="min-h-0 flex-1 overflow-y-auto pb-20">
-          {conversations.map((c) => (
+          {filteredConversations.map((c) => (
             <li key={c.id}>
               <ConversationRowItem
                 id={c.id}
                 otherUsername={c.otherUsername}
                 otherAvatarId={c.otherAvatarId}
+                nickname={nicknames[c.otherUserId] ?? null}
                 lastActivity={c.lastActivity}
                 active={activeConversationId === c.id}
               />
@@ -403,7 +435,7 @@ export function ChatList({
         </ul>
       )}
 
-      {!loadingList ? (
+      {!showLoading ? (
         <button
           type="button"
           onClick={() => setComposeOpen(true)}

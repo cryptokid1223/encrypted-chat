@@ -4,10 +4,17 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeftIcon, LockIcon } from "@/components/icons";
+import { ContactDetail } from "@/components/contact-detail";
 import { useKeyGate } from "@/components/key-gate";
+import { useNicknames } from "@/components/nicknames-context";
 import { isSameCalendarDay, isSameMessageGroup } from "@/lib/chat";
 import { encryptMessage } from "@/lib/crypto";
 import { Avatar } from "@/lib/avatars";
+import {
+  displayName,
+  formatAtUsername,
+  hasNickname,
+} from "@/lib/display-name";
 import { hasPrivateKey, loadPrivateKey } from "@/lib/keystore";
 import { createClient } from "@/lib/supabase/client";
 import { MessageBubble } from "@/components/message-bubble";
@@ -38,7 +45,10 @@ export function ChatRoom() {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
   const [otherUsername, setOtherUsername] = useState("");
+  const [otherUserId, setOtherUserId] = useState<string | null>(null);
   const [otherAvatarId, setOtherAvatarId] = useState<string | null>(null);
+  const [contactDetailOpen, setContactDetailOpen] = useState(false);
+  const { getNickname } = useNicknames();
   const [myUserId, setMyUserId] = useState<string | null>(null);
   const [theirPublicKey, setTheirPublicKey] = useState<string | null>(null);
   const [myPrivateKey, setMyPrivateKey] = useState<string | null>(null);
@@ -198,6 +208,7 @@ export function ChatRoom() {
         theirPublicKeyRef.current = otherProfile.public_key;
         myPrivateKeyRef.current = privateKey;
         setOtherUsername(otherProfile.username);
+        setOtherUserId(otherId as string);
         setOtherAvatarId((otherProfile.avatar_id as string | null) ?? null);
         setMessages(decrypted);
         setStatus("ready");
@@ -415,6 +426,14 @@ export function ChatRoom() {
     );
   }
 
+  const otherNickname = otherUserId ? getNickname(otherUserId) : null;
+  const otherIdentity = {
+    username: otherUsername,
+    nickname: otherNickname,
+  };
+  const otherDisplayName = displayName(otherIdentity);
+  const otherHasNickname = hasNickname(otherIdentity);
+
   return (
     <div className="flex h-full min-h-0 w-full flex-1 flex-col bg-[#0F0E0D]">
       <div className="safe-pt shrink-0 border-b border-[#2E2B28] bg-[#1A1816]">
@@ -426,16 +445,29 @@ export function ChatRoom() {
           >
             <ChevronLeftIcon className="h-5 w-5" />
           </Link>
-          <Avatar avatarId={otherAvatarId} size={32} />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[15px] font-semibold leading-[1.4] text-[#FAFAF9]">
-              {otherUsername}
-            </p>
-            <p className="flex items-center gap-1 text-[12px] leading-[1.4] text-[#6E6963]">
-              <LockIcon className="h-3 w-3" />
-              End-to-end encrypted
-            </p>
-          </div>
+          <button
+            type="button"
+            onClick={() => setContactDetailOpen(true)}
+            disabled={!otherUserId}
+            className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2.5 rounded-xl text-left transition-colors duration-150 ease-in-out hover:bg-[#242220]/50 active:bg-[#242220] disabled:opacity-60"
+          >
+            <Avatar avatarId={otherAvatarId} size={32} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[15px] font-semibold leading-[1.4] text-[#FAFAF9]">
+                {otherDisplayName}
+              </p>
+              {otherHasNickname ? (
+                <p className="truncate text-[12px] leading-[1.4] text-[#6E6963]">
+                  {formatAtUsername(otherUsername)}
+                </p>
+              ) : (
+                <p className="flex items-center gap-1 text-[12px] leading-[1.4] text-[#6E6963]">
+                  <LockIcon className="h-3 w-3" />
+                  End-to-end encrypted
+                </p>
+              )}
+            </div>
+          </button>
         </div>
       </div>
 
@@ -449,8 +481,13 @@ export function ChatRoom() {
             <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
               <Avatar avatarId={otherAvatarId} size={48} />
               <p className="text-[14px] font-medium text-[#FAFAF9]">
-                {otherUsername}
+                {otherDisplayName}
               </p>
+              {otherHasNickname ? (
+                <p className="text-[13px] text-[#6E6963]">
+                  {formatAtUsername(otherUsername)}
+                </p>
+              ) : null}
               <p className="max-w-[220px] text-[13px] leading-[1.4] text-[#6E6963]">
                 Messages are end-to-end encrypted.
               </p>
@@ -520,6 +557,15 @@ export function ChatRoom() {
       </div>
 
       <ChatComposer onSend={handleSend} disabled={sending} />
+
+      {contactDetailOpen && otherUserId ? (
+        <ContactDetail
+          contactId={otherUserId}
+          username={otherUsername}
+          avatarId={otherAvatarId}
+          onClose={() => setContactDetailOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
