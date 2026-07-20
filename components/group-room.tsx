@@ -263,17 +263,6 @@ export function GroupRoom() {
       pendingByUuidRef.current.clear();
 
       try {
-        if (!(await hasPrivateKey())) {
-          if (!cancelled) requireKeyImport();
-          return;
-        }
-
-        const privateKey = await loadPrivateKey();
-        if (!privateKey) {
-          if (!cancelled) requireKeyImport();
-          return;
-        }
-
         const {
           data: { user },
         } = await supabase.auth.getUser();
@@ -283,6 +272,17 @@ export function GroupRoom() {
             setError("Not signed in.");
             setStatus("error");
           }
+          return;
+        }
+
+        if (!(await hasPrivateKey(user.id))) {
+          if (!cancelled) requireKeyImport();
+          return;
+        }
+
+        const privateKey = await loadPrivateKey(user.id);
+        if (!privateKey) {
+          if (!cancelled) requireKeyImport();
           return;
         }
 
@@ -590,7 +590,7 @@ export function GroupRoom() {
         }
 
         try {
-          if (!(await hasPrivateKey())) {
+          if (!(await hasPrivateKey(myId))) {
             requireKeyImport();
             return;
           }
@@ -658,7 +658,7 @@ export function GroupRoom() {
           pendingAudioRef.current.delete(tempId);
           pendingAudioRef.current.delete(messageUuid);
         } catch {
-          if (!(await hasPrivateKey())) {
+          if (!(await hasPrivateKey(myId))) {
             requireKeyImport();
             return;
           }

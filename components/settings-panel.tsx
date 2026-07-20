@@ -25,8 +25,9 @@ import {
   setAiAssistEnabled,
 } from "@/components/ai-assist-prefs";
 import { useProfile } from "@/components/profile-context";
+import { useKeyGate } from "@/components/key-gate";
 import { Avatar } from "@/lib/avatars";
-import { invalidatePrivateKeyCache, loadPrivateKey } from "@/lib/keystore";
+import { invalidatePrivateKeyCache, loadPrivateKey, removePrivateKey } from "@/lib/keystore";
 import { revokeAllAttachmentUrls } from "@/lib/attachmentCache";
 import { createClient } from "@/lib/supabase/client";
 
@@ -35,7 +36,14 @@ const APP_VERSION = "0.1.0";
 /** Existing key backup download flow — unchanged behavior. */
 async function downloadKeyBackup(): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    const key = await loadPrivateKey();
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return { ok: false, error: "Not signed in." };
+    }
+    const key = await loadPrivateKey(user.id);
     if (!key) {
       return { ok: false, error: "No private key found on this device." };
     }
@@ -60,6 +68,7 @@ export function SettingsPanel() {
     rawReturnTo?.startsWith("/chats") ? rawReturnTo : "/chats";
 
   const { avatarId, username, setAvatarId } = useProfile();
+  const { requireKeyImport } = useKeyGate();
   const [editingAvatar, setEditingAvatar] = useState(false);
   const [avatarSaving, setAvatarSaving] = useState(false);
   const [backupMessage, setBackupMessage] = useState<string | null>(null);
@@ -68,6 +77,8 @@ export function SettingsPanel() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
   const [aiAssistEnabled, setAiAssistEnabledState] = useState(true);
+  const [removeKeyOpen, setRemoveKeyOpen] = useState(false);
+  const [removingKey, setRemovingKey] = useState(false);
 
   useEffect(() => {
     setAiAssistEnabledState(getAiAssistEnabled());
@@ -80,12 +91,12 @@ export function SettingsPanel() {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
-      if (editingAvatar || logoutOpen || transferOpen) return;
+      if (editingAvatar || logoutOpen || transferOpen || removeKeyOpen) return;
       navigateBack();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [navigateBack, editingAvatar, logoutOpen, transferOpen]);
+  }, [navigateBack, editingAvatar, logoutOpen, transferOpen, removeKeyOpen]);
 
   async function updateAvatar(nextId: string) {
     if (nextId === avatarId) {
@@ -131,6 +142,7 @@ export function SettingsPanel() {
     try {
       const supabase = createClient();
       await supabase.auth.signOut();
+      // Session + in-memory key cache clear; persisted per-user keys stay on device.
       invalidatePrivateKeyCache();
       revokeAllAttachmentUrls();
       router.replace("/login");
@@ -138,6 +150,30 @@ export function SettingsPanel() {
     } catch {
       setLoggingOut(false);
       setLogoutOpen(false);
+    }
+  }
+
+  async function confirmRemoveKey() {
+    setRemovingKey(true);
+    setBackupError(null);
+    setBackupMessage(null);
+    try {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        setBackupError("Not signed in.");
+        return;
+      }
+      await removePrivateKey(user.id);
+      setRemoveKeyOpen(false);
+      setBackupMessage(null);
+      requireKeyImport();
+    } catch {
+      setBackupError("Could not remove the key from this device.");
+    } finally {
+      setRemovingKey(false);
     }
   }
 
@@ -200,6 +236,12 @@ export function SettingsPanel() {
               label="Transfer key"
               chevron
               onClick={() => setTransferOpen(true)}
+              isLast={false}
+            />
+            <SettingsRow
+              label="Remove key from this device"
+              destructive
+              onClick={() => setRemoveKeyOpen(true)}
               isLast
             />
           </SettingsSection>
@@ -334,6 +376,19 @@ export function SettingsPanel() {
           onConfirm={confirmLogout}
           onCancel={() => setLogoutOpen(false)}
           confirming={loggingOut}
+          destructive
+        />
+      ) : null}
+
+      {removeKeyOpen ? (
+        <SettingsConfirmDialog
+          title="Remove key from this device?"
+          description="This device will no longer be able to read your messages unless you restore your key. Make sure you have your key backup."
+          confirmLabel={removingKey ? "Removing…" : "Remove key"}
+          cancelLabel="Cancel"
+          onConfirm={() => void confirmRemoveKey()}
+          onCancel={() => setRemoveKeyOpen(false)}
+          confirming={removingKey}
           destructive
         />
       ) : null}

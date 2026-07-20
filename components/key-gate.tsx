@@ -76,7 +76,15 @@ export function KeyGate({ children }: { children: ReactNode }) {
 
     void (async () => {
       try {
-        const ok = await hasPrivateKey();
+        const supabase = createClient();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          if (!cancelled) settle(false);
+          return;
+        }
+        const ok = await hasPrivateKey(user.id);
         if (!cancelled) settle(ok);
       } catch {
         if (!cancelled) settle(false, CHECK_NOTICE);
@@ -102,8 +110,16 @@ export function KeyGate({ children }: { children: ReactNode }) {
       setError("That file is empty.");
       return false;
     }
-    await savePrivateKey(trimmed);
-    const ok = await hasPrivateKey();
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      setError("Not signed in.");
+      return false;
+    }
+    await savePrivateKey(trimmed, user.id);
+    const ok = await hasPrivateKey(user.id);
     if (!ok) {
       setHasKey(false);
       return false;

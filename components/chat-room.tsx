@@ -196,17 +196,6 @@ export function ChatRoom() {
       pendingByCipherRef.current.clear();
 
       try {
-        if (!(await hasPrivateKey())) {
-          if (!cancelled) requireKeyImport();
-          return;
-        }
-
-        const privateKey = await loadPrivateKey();
-        if (!privateKey) {
-          if (!cancelled) requireKeyImport();
-          return;
-        }
-
         const {
           data: { user },
         } = await supabase.auth.getUser();
@@ -216,6 +205,17 @@ export function ChatRoom() {
             setError("Not signed in.");
             setStatus("error");
           }
+          return;
+        }
+
+        if (!(await hasPrivateKey(user.id))) {
+          if (!cancelled) requireKeyImport();
+          return;
+        }
+
+        const privateKey = await loadPrivateKey(user.id);
+        if (!privateKey) {
+          if (!cancelled) requireKeyImport();
           return;
         }
 
@@ -419,7 +419,8 @@ export function ChatRoom() {
         let cipherKey: string | null = null;
 
         try {
-          if (!(await hasPrivateKey())) {
+          const myIdForKey = myUserIdRef.current;
+          if (!myIdForKey || !(await hasPrivateKey(myIdForKey))) {
             requireKeyImport();
             return;
           }
@@ -475,7 +476,8 @@ export function ChatRoom() {
           pendingAudioRef.current.delete(tempId);
         } catch {
           // If encryption/key is the issue, route to import screen.
-          if (!(await hasPrivateKey())) {
+          const myIdForKey = myUserIdRef.current;
+          if (!myIdForKey || !(await hasPrivateKey(myIdForKey))) {
             requireKeyImport();
             return;
           }

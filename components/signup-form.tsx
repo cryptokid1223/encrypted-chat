@@ -134,9 +134,9 @@ export function SignupForm() {
 
       const { publicKey, privateKey } = await generateKeyPair();
 
-      // The private key is stored only in IndexedDB on this device.
+      // The private key is stored only on this device (namespaced by user id).
       // It must NEVER be sent to Supabase or any server.
-      await savePrivateKey(privateKey);
+      await savePrivateKey(privateKey, signUpData.user.id);
 
       const { error: profileError } = await supabase.from("profiles").insert({
         id: signUpData.user.id,

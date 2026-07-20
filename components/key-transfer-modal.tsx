@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeftIcon } from "@/components/icons";
 import { loadPrivateKey } from "@/lib/keystore";
+import { createClient } from "@/lib/supabase/client";
 import QRCode from "qrcode";
 
 const QR_DISPLAY_SECONDS = 60;
@@ -78,7 +79,17 @@ export function KeyTransferModal({ onClose }: { onClose: () => void }) {
     setSecondsLeft(QR_DISPLAY_SECONDS);
 
     try {
-      const backup = await loadPrivateKey();
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        setError("Not signed in.");
+        setStep("warning");
+        return;
+      }
+
+      const backup = await loadPrivateKey(user.id);
       if (!backup) {
         setError("No private key found on this device.");
         setStep("warning");

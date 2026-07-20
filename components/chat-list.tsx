@@ -382,8 +382,8 @@ export function ChatList({
       myUserIdRef.current = user.id;
 
       let myPrivateKey: string | null = null;
-      if (await hasPrivateKey()) {
-        myPrivateKey = await loadPrivateKey();
+      if (await hasPrivateKey(user.id)) {
+        myPrivateKey = await loadPrivateKey(user.id);
         myPrivateKeyRef.current = myPrivateKey;
       }
 
@@ -592,8 +592,8 @@ export function ChatList({
       setMyUserId(user.id);
       myUserIdRef.current = user.id;
 
-      if (await hasPrivateKey()) {
-        myPrivateKeyRef.current = await loadPrivateKey();
+      if (await hasPrivateKey(user.id)) {
+        myPrivateKeyRef.current = await loadPrivateKey(user.id);
       }
 
       channel = supabase
