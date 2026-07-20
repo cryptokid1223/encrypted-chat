@@ -22,7 +22,7 @@ import {
 import { hasPrivateKey, loadPrivateKey } from "@/lib/keystore";
 import { createClient } from "@/lib/supabase/client";
 import { MessageBubble } from "@/components/message-bubble";
-import { ChatComposer } from "@/components/chat-composer";
+import { ChatComposer, type VoiceRecordingPayload } from "@/components/chat-composer";
 import { PhotoViewerHostProvider } from "@/components/photo-viewer-host";
 import { useVisualViewport } from "@/hooks/useVisualViewport";
 import type {
@@ -107,6 +107,9 @@ export function ChatRoom() {
   const [attachError, setAttachError] = useState<string | null>(null);
 
   const pendingFileRef = useRef<Map<string, File>>(new Map());
+  const pendingAudioRef = useRef<
+    Map<string, { bytes: Uint8Array; mime: string; durationMs: number }>
+  >(new Map());
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -125,6 +128,7 @@ export function ChatRoom() {
   useEffect(() => {
     initialMessageIdsRef.current = null;
     pendingFileRef.current.clear();
+    pendingAudioRef.current.clear();
     return () => {
       for (const m of messagesRef.current) {
         if (m.localPreviewUrl) {
@@ -447,6 +451,7 @@ export function ChatRoom() {
             ),
           );
           pendingFileRef.current.delete(tempId);
+          pendingAudioRef.current.delete(tempId);
         } catch {
           // If encryption/key is the issue, route to import screen.
           if (!(await hasPrivateKey())) {
@@ -611,6 +616,83 @@ export function ChatRoom() {
     [sendPlaintext],
   );
 
+  const runAudioSend = useCallback(
+    async (payload: VoiceRecordingPayload, existingId?: string) => {
+      const myId = myUserIdRef.current;
+      if (!myId) return;
+
+      setAttachError(null);
+      setAttachUploading(true);
+
+      const tempId =
+        existingId ??
+        `local:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+
+      pendingAudioRef.current.set(tempId, payload);
+
+      if (!existingId) {
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === tempId)) return prev;
+          return [
+            ...prev,
+            {
+              id: tempId,
+              senderId: myId,
+              body: "",
+              createdAt: new Date().toISOString(),
+              pendingAttachment: {
+                kind: "audio",
+                durationMs: payload.durationMs,
+              },
+            },
+          ];
+        });
+      } else {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === existingId
+              ? {
+                  ...m,
+                  failed: false,
+                  pendingAttachment: {
+                    kind: "audio",
+                    durationMs: payload.durationMs,
+                  },
+                }
+              : m,
+          ),
+        );
+      }
+
+      try {
+        const { ciphertext, fileKey, nonce } = await encryptFile(payload.bytes);
+        const path = await uploadEncryptedAttachment(ciphertext, myId);
+        const body = buildAttachmentBody({
+          v: 1,
+          kind: "audio",
+          path,
+          key: fileKey,
+          nonce,
+          mime: payload.mime,
+          size: payload.bytes.length,
+          durationMs: payload.durationMs,
+        });
+
+        sendPlaintext(body, tempId, {
+          manageSendingState: false,
+          preservePreview: true,
+        });
+      } catch {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)),
+        );
+      } finally {
+        setAttachUploading(false);
+      }
+    },
+    [sendPlaintext],
+  );
+
   const runAttachmentSend = useCallback(
     async (file: File, existingId?: string) => {
       const myId = myUserIdRef.current;
@@ -704,6 +786,13 @@ export function ChatRoom() {
     [runAttachmentSend, runVideoSend],
   );
 
+  const handleVoiceSend = useCallback(
+    (payload: VoiceRecordingPayload) => {
+      void runAudioSend(payload);
+    },
+    [runAudioSend],
+  );
+
   const handleSend = useCallback(
     (text: string) => {
       sendPlaintext(text);
@@ -713,6 +802,11 @@ export function ChatRoom() {
 
   const handleRetry = useCallback(
     (id: string) => {
+      const audio = pendingAudioRef.current.get(id);
+      if (audio) {
+        void runAudioSend(audio, id);
+        return;
+      }
       const file = pendingFileRef.current.get(id);
       if (file) {
         if (file.type.startsWith("video/")) {
@@ -726,7 +820,7 @@ export function ChatRoom() {
       if (!msg) return;
       sendPlaintext(msg.body, id);
     },
-    [sendPlaintext, runAttachmentSend, runVideoSend],
+    [sendPlaintext, runAttachmentSend, runVideoSend, runAudioSend],
   );
 
   if (status === "loading") {
@@ -887,6 +981,7 @@ export function ChatRoom() {
       <ChatComposer
         onSend={handleSend}
         onFileSelected={handleFileSelected}
+        onVoiceSend={handleVoiceSend}
         disabled={sending}
         attachDisabled={attachUploading}
         attachError={attachError}

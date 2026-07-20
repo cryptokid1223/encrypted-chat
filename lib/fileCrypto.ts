@@ -3,7 +3,7 @@ import sodium from "libsodium-wrappers-sumo";
 /** Attachment metadata — will ride inside encrypted message bodies in a future integration. */
 export interface AttachmentMeta {
   v: 1;
-  kind: "image" | "video";
+  kind: "image" | "video" | "audio";
   path: string;
   key: string;
   nonce: string;

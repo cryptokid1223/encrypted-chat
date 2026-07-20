@@ -48,6 +48,9 @@ export function attachmentPreviewLabel(meta: AttachmentMeta): string {
   if (meta.kind === "video") {
     return "🎥 Video";
   }
+  if (meta.kind === "audio") {
+    return "🎤 Voice message";
+  }
   return "📷 Photo";
 }
 

@@ -226,6 +226,20 @@ label {
   animation: msg-enter 150ms ease-out both;
 }
 
+@keyframes record-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.record-pulse {
+  animation: record-pulse 1.2s ease-in-out infinite;
+}
+
 .photo-reveal {
   opacity: 0;
   transition: opacity 150ms ease-out;
@@ -261,6 +275,10 @@ label {
   .photo-reveal {
     transition: none;
     opacity: 1;
+  }
+
+  .record-pulse {
+    animation: none;
   }
 
   .skeleton-shimmer {

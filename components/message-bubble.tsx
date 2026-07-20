@@ -88,10 +88,20 @@ export const MessageBubble = memo(function MessageBubble({
             key: "",
             nonce: "",
             mime:
-              pendingAttachment?.kind === "video" ? "video/mp4" : "image/jpeg",
+              pendingAttachment?.kind === "video"
+                ? "video/mp4"
+                : pendingAttachment?.kind === "audio"
+                  ? "audio/mp4"
+                  : "image/jpeg",
             size: 0,
-            w: pendingAttachment?.w ?? 200,
-            h: pendingAttachment?.h ?? 200,
+            w:
+              pendingAttachment?.kind === "audio"
+                ? undefined
+                : (pendingAttachment?.w ?? 200),
+            h:
+              pendingAttachment?.kind === "audio"
+                ? undefined
+                : (pendingAttachment?.h ?? 200),
             durationMs: pendingAttachment?.durationMs,
           }
         : null;
@@ -126,9 +136,13 @@ export const MessageBubble = memo(function MessageBubble({
           {isAttachment && attachmentMeta ? (
             <div
               className={`overflow-hidden ${radiusClass} ${bubbleClass} ${
-                isPending && !localPreviewUrl ? "opacity-70" : ""
+                isPending && !localPreviewUrl && attachmentMeta.kind !== "audio"
+                  ? "opacity-70"
+                  : ""
               }`}
-              style={{ maxHeight: 320 }}
+              style={
+                attachmentMeta.kind === "audio" ? undefined : { maxHeight: 320 }
+              }
             >
               <AttachmentBubble
                 meta={attachmentMeta}
