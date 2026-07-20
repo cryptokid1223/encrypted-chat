@@ -6,7 +6,13 @@
 
 import sodium from "libsodium-wrappers-sumo";
 import { wrapPrivateKey, unwrapPrivateKey } from "@/lib/keyWrap";
-import { hasPrivateKey, loadPrivateKey, savePrivateKey } from "@/lib/keystore";
+import {
+  fetchPublishedPublicKey,
+  hasPrivateKey,
+  loadPrivateKey,
+  saveKeypairForUser,
+} from "@/lib/keystore";
+import { publicKeyFromPrivateKey } from "@/lib/crypto";
 import { createClient } from "@/lib/supabase/client";
 
 const B64 = () => sodium.base64_variants.ORIGINAL;
@@ -104,7 +110,7 @@ export async function wrapAndUploadLocalKey(
  * If no local key, fetch wrapped_keys and unwrap with password into keystore.
  * Returns:
  *  - restored: unwrapped + saved
- *  - already_present: device already had the key
+ *  - already_present: device already had a usable key
  *  - missing_row: no wrapped_keys row (fall through to QR/file restore)
  *  - failed: unwrap/save failed (fall through to restore)
  */
@@ -137,7 +143,21 @@ export async function tryRestoreKeyFromPassword(
       data.kdf_mem as number,
       password,
     );
-    await savePrivateKey(privateKeyBytesToB64(bytes), userId);
+    const privateKey = privateKeyBytesToB64(bytes);
+    const publicKey = await publicKeyFromPrivateKey(privateKey);
+    const serverKey = await fetchPublishedPublicKey(userId);
+    if (!serverKey || serverKey !== publicKey) {
+      console.error(
+        "[wrappedKeys] restore aborted: unwrapped key does not match published public key",
+        { userId },
+      );
+      return "failed";
+    }
+    await saveKeypairForUser(
+      userId,
+      { publicKey, privateKey },
+      { expectedServerKey: serverKey },
+    );
     return "restored";
   } catch {
     return "failed";
@@ -147,6 +167,9 @@ export async function tryRestoreKeyFromPassword(
 const DONE_PREFIX = "wrap_setup_done_";
 const DISMISS_PREFIX = "wrap_setup_dismissed_at_";
 const DISMISS_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Per-session: userIds for which wrapped_keys presence was confirmed on the server. */
+const sessionConfirmedWrap = new Set<string>();
 
 export function isWrapSetupComplete(userId: string): boolean {
   try {
@@ -163,6 +186,7 @@ export function markWrapSetupComplete(userId: string): void {
   } catch {
     // ignore
   }
+  sessionConfirmedWrap.add(userId);
 }
 
 export function dismissWrapSetupBanner(userId: string): void {
@@ -173,29 +197,48 @@ export function dismissWrapSetupBanner(userId: string): void {
   }
 }
 
-export function shouldShowWrapSetupBanner(userId: string): boolean {
-  if (isWrapSetupComplete(userId)) return false;
+function isDismissCooldownActive(userId: string): boolean {
   try {
     const raw = localStorage.getItem(DISMISS_PREFIX + userId);
-    if (!raw) return true;
+    if (!raw) return false;
     const at = Number(raw);
-    if (!Number.isFinite(at)) return true;
-    return Date.now() - at >= DISMISS_MS;
+    if (!Number.isFinite(at)) return false;
+    return Date.now() - at < DISMISS_MS;
   } catch {
-    return true;
+    return false;
   }
 }
 
 /**
- * Decide whether the chats-list backfill banner should appear.
- * Requires local key and no wrapped_keys row.
+ * Server-trusted check: should the chats-list backfill banner appear?
+ *
+ * - Queries wrapped_keys (unless this session already confirmed a row AND the
+ *   local wrap_setup_done cache is set — short-circuit only).
+ * - A stale wrap_setup_done flag alone NEVER suppresses the banner when the
+ *   server has no row.
  */
-export async function needsWrapSetupBanner(userId: string): Promise<boolean> {
-  if (!shouldShowWrapSetupBanner(userId)) return false;
+export async function ensureWrappedKey(userId: string): Promise<boolean> {
   if (!(await hasPrivateKey(userId))) return false;
-  if (await hasWrappedKeyRow(userId)) {
-    markWrapSetupComplete(userId);
+
+  // Short-circuit only when local cache says done AND we already hit the server
+  // successfully this session.
+  if (isWrapSetupComplete(userId) && sessionConfirmedWrap.has(userId)) {
     return false;
   }
+
+  const hasRow = await hasWrappedKeyRow(userId);
+  if (hasRow) {
+    markWrapSetupComplete(userId);
+    sessionConfirmedWrap.add(userId);
+    return false;
+  }
+
+  // No server row → need wrap, regardless of stale local flag.
+  if (isDismissCooldownActive(userId)) return false;
   return true;
+}
+
+/** @deprecated Prefer ensureWrappedKey — kept as alias for existing callers. */
+export async function needsWrapSetupBanner(userId: string): Promise<boolean> {
+  return ensureWrappedKey(userId);
 }

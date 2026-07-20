@@ -16,9 +16,10 @@ import {
 } from "@/components/auth-ui";
 import { KeyQrScanner } from "@/components/key-qr-scanner";
 import {
-  hasPrivateKey,
   invalidatePrivateKeyCache,
-  savePrivateKey,
+  KeyMismatchError,
+  resolveKeySession,
+  saveRestoredPrivateKey,
 } from "@/lib/keystore";
 import { revokeAllAttachmentUrls } from "@/lib/attachmentCache";
 import { createClient } from "@/lib/supabase/client";
@@ -51,15 +52,21 @@ export function KeyGate({ children }: { children: ReactNode }) {
   const [loggingOut, setLoggingOut] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const [checkNotice, setCheckNotice] = useState<string | null>(null);
+  const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
   const settledRef = useRef(false);
 
   const settle = useCallback(
-    (ok: boolean, notice: string | null = null) => {
+    (
+      ok: boolean,
+      notice: string | null = null,
+      restoreMsg: string | null = null,
+    ) => {
       if (settledRef.current) return;
       settledRef.current = true;
       setHasKey(ok);
       if (notice) setCheckNotice(notice);
+      if (restoreMsg) setRestoreMessage(restoreMsg);
       setReady(true);
     },
     [],
@@ -86,8 +93,18 @@ export function KeyGate({ children }: { children: ReactNode }) {
           if (!cancelled) settle(false);
           return;
         }
-        const ok = await hasPrivateKey(user.id);
-        if (!cancelled) settle(ok);
+        const session = await resolveKeySession(user.id);
+        if (cancelled) return;
+        if (session.status === "ready") {
+          settle(true);
+          return;
+        }
+        if (session.status === "restore_needed") {
+          settle(false, null, session.message);
+          return;
+        }
+        // unprovisioned — never generate here; show restore UI with explanation
+        settle(false, null, session.message);
       } catch {
         if (!cancelled) settle(false, CHECK_NOTICE);
       }
@@ -102,6 +119,9 @@ export function KeyGate({ children }: { children: ReactNode }) {
   const requireKeyImport = useCallback(() => {
     settledRef.current = true;
     setFlash("Your encryption key isn't on this device");
+    setRestoreMessage(
+      "This device doesn't have your encryption key. Restore it to read your messages.",
+    );
     setHasKey(false);
     setReady(true);
   }, []);
@@ -120,15 +140,29 @@ export function KeyGate({ children }: { children: ReactNode }) {
       setError("Not signed in.");
       return false;
     }
-    await savePrivateKey(trimmed, user.id);
-    const ok = await hasPrivateKey(user.id);
-    if (!ok) {
+    try {
+      await saveRestoredPrivateKey(user.id, trimmed);
+    } catch (err) {
+      if (err instanceof KeyMismatchError) {
+        setError(err.message);
+      } else {
+        setError(
+          err instanceof Error ? err.message : "Could not import that key.",
+        );
+      }
       setHasKey(false);
+      return false;
+    }
+    const session = await resolveKeySession(user.id);
+    if (session.status !== "ready") {
+      setHasKey(false);
+      setError("Key did not save. Try again.");
       return false;
     }
     setHasKey(true);
     setFlash(null);
     setCheckNotice(null);
+    setRestoreMessage(null);
     setError(null);
     return true;
   }, []);
@@ -214,8 +248,8 @@ export function KeyGate({ children }: { children: ReactNode }) {
               Restore your encryption key
             </h1>
             <p className="mt-2 text-[15px] leading-[1.4] text-[var(--text-secondary)]">
-              This device doesn&apos;t have your key. Import a backup or scan a
-              QR from your other device.
+              {restoreMessage ??
+                "This device doesn't have your key. Import a backup or scan a QR from your other device."}
             </p>
             {checkNotice ? (
               <p

@@ -7,12 +7,14 @@
  * The private key is stored only on this device.
  * It must NEVER be sent to Supabase or any server.
  *
- * CRYPTO POLICY: this file only stores/loads opaque base64 key strings.
- * It must not change key generation, encrypt/decrypt, or key formats.
+ * All key persistence goes through saveKeypairForUser (or generateKeyPairForNewAccount
+ * which calls it). Direct SecureStoragePlugin.set / IndexedDB puts are private.
  */
 
 import { Capacitor } from "@capacitor/core";
 import { SecureStoragePlugin } from "capacitor-secure-storage-plugin";
+import { generateKeyPair, publicKeyFromPrivateKey } from "@/lib/crypto";
+import { createClient } from "@/lib/supabase/client";
 
 const DB_NAME = "cipher-keystore";
 const STORE_NAME = "keys";
@@ -85,6 +87,39 @@ function withTimeout<T>(label: string, work: Promise<T>): Promise<T> {
     }),
   ]);
 }
+
+// ── Typed errors ─────────────────────────────────────────────────
+
+export class KeyMismatchError extends Error {
+  readonly name = "KeyMismatchError";
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+export class KeyGenerationBlockedError extends Error {
+  readonly name = "KeyGenerationBlockedError";
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+export type Keypair = {
+  publicKey: string;
+  privateKey: string;
+};
+
+export type KeySessionResult =
+  | { status: "ready" }
+  | {
+      status: "restore_needed";
+      reason: "missing" | "mismatch";
+      message: string;
+    }
+  | {
+      status: "unprovisioned";
+      message: string;
+    };
 
 // ── IndexedDB (web + native migration source) ────────────────────
 
@@ -165,7 +200,14 @@ async function idbDelete(slot: string): Promise<void> {
 
 // ── Keychain (native) ────────────────────────────────────────────
 
+/**
+ * Load from Keychain. A plugin throw for a missing key means "no key stored"
+ * (return null). Plugin unavailability is a hard failure.
+ */
 async function secureLoad(slot: string): Promise<string | null> {
+  if (!Capacitor.isPluginAvailable("SecureStoragePlugin")) {
+    throw new Error("SecureStoragePlugin is not available");
+  }
   try {
     const { value } = await withTimeout(
       "SecureStoragePlugin.get",
@@ -173,15 +215,19 @@ async function secureLoad(slot: string): Promise<string | null> {
     );
     return value && value.length > 0 ? value : null;
   } catch (err) {
+    // Missing key → empty slot, not a plugin failure.
     if (isMissingKeyError(err)) return null;
     console.error(
       `[keystore] SecureStoragePlugin.get failed for ${slot}: ${errMessage(err)}`,
     );
-    return null;
+    throw err;
   }
 }
 
 async function secureSave(slot: string, base64: string): Promise<void> {
+  if (!Capacitor.isPluginAvailable("SecureStoragePlugin")) {
+    throw new Error("SecureStoragePlugin is not available");
+  }
   try {
     await withTimeout(
       "SecureStoragePlugin.set",
@@ -196,6 +242,9 @@ async function secureSave(slot: string, base64: string): Promise<void> {
 }
 
 async function secureRemove(slot: string): Promise<void> {
+  if (!Capacitor.isPluginAvailable("SecureStoragePlugin")) {
+    return;
+  }
   try {
     await withTimeout(
       "SecureStoragePlugin.remove",
@@ -221,14 +270,39 @@ function warnLegacyMigration(userId: string): void {
   );
 }
 
+/**
+ * Sole storage write path for private-key bytes.
+ * Callers must go through saveKeypairForUser (or legacy migration helpers).
+ */
+async function writePrivateKeyToStorage(
+  userId: string,
+  base64: string,
+): Promise<void> {
+  const slot = storageKeyForUser(userId);
+  const native = useNativeBackend();
+  logBackendOnce(native);
+
+  if (native) {
+    await secureSave(slot, base64);
+  } else {
+    try {
+      await idbSave(slot, base64);
+    } catch (idbErr) {
+      console.error(
+        `[keystore] IndexedDB save failed: ${errMessage(idbErr)}`,
+      );
+      throw new Error("Could not save encryption key on this device");
+    }
+  }
+}
+
 /** Promote a recovered key into the namespaced Keychain slot (native only). */
 async function promoteToNamespacedKeychain(
   userId: string,
   base64: string,
   options?: { clearLegacySecure?: boolean; clearLegacyIdb?: boolean },
 ): Promise<void> {
-  const slot = storageKeyForUser(userId);
-  await secureSave(slot, base64);
+  await writePrivateKeyToStorage(userId, base64);
   if (options?.clearLegacySecure) {
     await secureRemove(LEGACY_SECURE_KEY);
   }
@@ -236,7 +310,7 @@ async function promoteToNamespacedKeychain(
     await idbDelete(LEGACY_IDB_KEY);
   }
   // Best-effort: drop stranded IndexedDB copy after Keychain write succeeds.
-  await idbDelete(slot);
+  await idbDelete(storageKeyForUser(userId));
   warnLegacyMigration(userId);
 }
 
@@ -246,15 +320,27 @@ async function promoteToNamespacedKeychain(
  */
 async function loadFromKeychain(userId: string): Promise<string | null> {
   const slot = storageKeyForUser(userId);
-  const fromKeychain = await secureLoad(slot);
-  if (fromKeychain) return fromKeychain;
+  try {
+    const fromKeychain = await secureLoad(slot);
+    if (fromKeychain) return fromKeychain;
+  } catch (err) {
+    // Plugin failure (not missing-key): surface as no usable key for this check.
+    console.error(
+      `[keystore] Keychain load failed: ${errMessage(err)}`,
+    );
+    return null;
+  }
 
-  const legacySecure = await secureLoad(LEGACY_SECURE_KEY);
-  if (legacySecure) {
-    await promoteToNamespacedKeychain(userId, legacySecure, {
-      clearLegacySecure: true,
-    });
-    return legacySecure;
+  try {
+    const legacySecure = await secureLoad(LEGACY_SECURE_KEY);
+    if (legacySecure) {
+      await promoteToNamespacedKeychain(userId, legacySecure, {
+        clearLegacySecure: true,
+      });
+      return legacySecure;
+    }
+  } catch {
+    // ignore legacy slot failures
   }
 
   // Keys may live only in IndexedDB after the SecureStoragePlugin import
@@ -298,7 +384,7 @@ async function loadFromIdbWithLegacy(userId: string): Promise<string | null> {
   if (!legacy) return null;
 
   try {
-    await idbSave(slot, legacy);
+    await writePrivateKeyToStorage(userId, legacy);
     await idbDelete(LEGACY_IDB_KEY);
     warnLegacyMigration(userId);
   } catch (err) {
@@ -309,6 +395,39 @@ async function loadFromIdbWithLegacy(userId: string): Promise<string | null> {
   return legacy;
 }
 
+/** Raw load from storage — does not validate against the server public key. */
+async function loadPrivateKeyRaw(userId: string): Promise<string | null> {
+  const native = useNativeBackend();
+  logBackendOnce(native);
+  if (native) {
+    return loadFromKeychain(userId);
+  }
+  return loadFromIdbWithLegacy(userId);
+}
+
+// ── Server public key ────────────────────────────────────────────
+
+/** Published Curve25519 public key from profiles, or null if none. */
+export async function fetchPublishedPublicKey(
+  userId: string,
+): Promise<string | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("public_key")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error(
+      `[keystore] Failed to fetch published public key: ${error.message}`,
+    );
+    return null;
+  }
+  const key = (data?.public_key as string | null | undefined)?.trim();
+  return key && key.length > 0 ? key : null;
+}
+
 // ── Public API ───────────────────────────────────────────────────
 
 let cacheUserId: string | null = null;
@@ -316,6 +435,9 @@ let privateKeyCache: string | null | undefined = undefined;
 let privateKeyLoadPromise: Promise<string | null> | null = null;
 let loadPromiseUserId: string | null = null;
 let privateKeyCacheVersion = 0;
+
+/** Session: local key verified against server public key for this user. */
+let verifiedMatchUserId: string | null = null;
 
 /**
  * Clears the in-memory session cache.
@@ -327,48 +449,239 @@ export function invalidatePrivateKeyCache(): void {
   cacheUserId = null;
   privateKeyLoadPromise = null;
   loadPromiseUserId = null;
+  verifiedMatchUserId = null;
 }
 
-export async function savePrivateKey(
-  base64: string,
+/**
+ * Sole public write path for persisting a keypair.
+ * Rejects when a published server public key exists and does not match.
+ */
+export async function saveKeypairForUser(
   userId: string,
+  keypair: Keypair,
+  opts?: {
+    /**
+     * Restore paths: pass the server public key already verified to match
+     * keypair.publicKey. Still re-compared inside this function.
+     */
+    expectedServerKey?: string;
+  },
 ): Promise<void> {
   if (!userId) {
     throw new Error("Cannot save encryption key without a user id");
   }
-
-  invalidatePrivateKeyCache();
-
-  const slot = storageKeyForUser(userId);
-  const native = useNativeBackend();
-  logBackendOnce(native);
-
-  if (native) {
-    await secureSave(slot, base64);
-  } else {
-    try {
-      await idbSave(slot, base64);
-    } catch (idbErr) {
-      console.error(
-        `[keystore] IndexedDB save failed: ${errMessage(idbErr)}`,
-      );
-      throw new Error("Could not save encryption key on this device");
-    }
+  if (!keypair.privateKey?.trim() || !keypair.publicKey?.trim()) {
+    throw new Error("Cannot save incomplete keypair");
   }
 
-  privateKeyCache = base64;
+  const derived = await publicKeyFromPrivateKey(keypair.privateKey);
+  if (derived !== keypair.publicKey) {
+    console.error(
+      "[keystore] KeyMismatchError: provided public key does not match private key",
+    );
+    throw new KeyMismatchError(
+      "Provided public key does not match the private key.",
+    );
+  }
+
+  if (
+    opts?.expectedServerKey &&
+    opts.expectedServerKey !== keypair.publicKey
+  ) {
+    console.error(
+      "[keystore] KeyMismatchError: expectedServerKey does not match keypair public key",
+    );
+    throw new KeyMismatchError(
+      "Restored key does not match the expected server public key.",
+    );
+  }
+
+  const serverKey = await fetchPublishedPublicKey(userId);
+  if (serverKey && serverKey !== keypair.publicKey) {
+    console.error(
+      "[keystore] KeyMismatchError: refusing to overwrite local key — " +
+        "keypair public key does not match the account's published public key",
+      { userId },
+    );
+    throw new KeyMismatchError(
+      "This key does not match your account's published public key. Restore aborted.",
+    );
+  }
+
+  if (opts?.expectedServerKey && serverKey && serverKey !== opts.expectedServerKey) {
+    console.error(
+      "[keystore] KeyMismatchError: server public key drifted from expectedServerKey",
+      { userId },
+    );
+    throw new KeyMismatchError(
+      "Server public key does not match the verified restore key.",
+    );
+  }
+
+  invalidatePrivateKeyCache();
+  await writePrivateKeyToStorage(userId, keypair.privateKey);
+
+  privateKeyCache = keypair.privateKey;
   cacheUserId = userId;
+  verifiedMatchUserId = userId;
+}
+
+/**
+ * Restore a private-key backup (QR / file). Derives the public key, requires a
+ * matching published server key, then persists via saveKeypairForUser.
+ */
+export async function saveRestoredPrivateKey(
+  userId: string,
+  privateKeyB64: string,
+): Promise<void> {
+  const trimmed = privateKeyB64.trim();
+  if (!trimmed) {
+    throw new Error("Empty key backup");
+  }
+  const publicKey = await publicKeyFromPrivateKey(trimmed);
+  const serverKey = await fetchPublishedPublicKey(userId);
+  if (!serverKey) {
+    throw new Error(
+      "Cannot restore: this account has no published public key yet.",
+    );
+  }
+  if (serverKey !== publicKey) {
+    console.error(
+      "[keystore] KeyMismatchError: restored backup does not match published public key",
+      { userId },
+    );
+    throw new KeyMismatchError(
+      "This backup does not match your account. Check that you imported the right key.",
+    );
+  }
+  await saveKeypairForUser(
+    userId,
+    { publicKey, privateKey: trimmed },
+    { expectedServerKey: serverKey },
+  );
+}
+
+/**
+ * Sole place that may generate a crypto_box keypair.
+ * Allowed only when the account has no published public key (new signup).
+ */
+export async function generateKeyPairForNewAccount(
+  userId: string,
+): Promise<Keypair> {
+  if (!userId) {
+    throw new Error("Cannot generate encryption key without a user id");
+  }
+
+  const serverKey = await fetchPublishedPublicKey(userId);
+  if (serverKey) {
+    console.error(
+      "[keystore] KeyGenerationBlockedError: refusing to generate — " +
+        "account already has a published public key",
+      { userId },
+    );
+    throw new KeyGenerationBlockedError(
+      "This account already has an encryption key. Restore it instead of creating a new one.",
+    );
+  }
+
+  const keypair = await generateKeyPair();
+  await saveKeypairForUser(userId, keypair);
+  return keypair;
+}
+
+/**
+ * Session start / KeyGate: decide whether the local key is usable.
+ * Never generates. Mismatched local keys are left in storage untouched.
+ */
+export async function resolveKeySession(
+  userId: string,
+): Promise<KeySessionResult> {
+  if (!userId) {
+    return {
+      status: "restore_needed",
+      reason: "missing",
+      message: "Not signed in.",
+    };
+  }
+
+  const serverKey = await fetchPublishedPublicKey(userId);
+  const localKey = await loadPrivateKeyRaw(userId);
+
+  if (localKey) {
+    let localPublic: string;
+    try {
+      localPublic = await publicKeyFromPrivateKey(localKey);
+    } catch {
+      return {
+        status: "restore_needed",
+        reason: "mismatch",
+        message:
+          "The key on this device is unreadable. Restore your encryption key.",
+      };
+    }
+
+    if (serverKey && localPublic === serverKey) {
+      verifiedMatchUserId = userId;
+      privateKeyCache = localKey;
+      cacheUserId = userId;
+      return { status: "ready" };
+    }
+
+    if (serverKey && localPublic !== serverKey) {
+      verifiedMatchUserId = null;
+      // Do not delete — leave mismatched bytes in storage; do not use them.
+      if (cacheUserId === userId) {
+        privateKeyCache = undefined;
+        cacheUserId = null;
+      }
+      return {
+        status: "restore_needed",
+        reason: "mismatch",
+        message:
+          "The key on this device doesn't match your account. Restore your encryption key.",
+      };
+    }
+
+    // Local key present but no published server key (incomplete signup).
+    verifiedMatchUserId = userId;
+    privateKeyCache = localKey;
+    cacheUserId = userId;
+    return { status: "ready" };
+  }
+
+  // No local key
+  verifiedMatchUserId = null;
+
+  if (serverKey) {
+    return {
+      status: "restore_needed",
+      reason: "missing",
+      message:
+        "This device doesn't have your encryption key. Restore it to read your messages.",
+    };
+  }
+
+  return {
+    status: "unprovisioned",
+    message:
+      "No encryption key on this device or account. Sign up again or contact support.",
+  };
 }
 
 /**
  * Load the private key for a specific account once per session.
- * Never falls back to another account's key.
- * Successful loads are cached; misses are not (so a later restore/save is visible).
+ * Returns null if missing or if the local key does not match the server
+ * (mismatched keys stay on disk but are never returned for use).
  */
 export async function loadPrivateKey(userId: string): Promise<string | null> {
   if (!userId) return null;
 
-  if (privateKeyCache !== undefined && cacheUserId === userId) {
+  if (
+    privateKeyCache !== undefined &&
+    cacheUserId === userId &&
+    verifiedMatchUserId === userId &&
+    privateKeyCache
+  ) {
     return privateKeyCache;
   }
   if (privateKeyLoadPromise && loadPromiseUserId === userId) {
@@ -377,19 +690,21 @@ export async function loadPrivateKey(userId: string): Promise<string | null> {
 
   const versionAtStart = privateKeyCacheVersion;
   const slotUserId = userId;
-  const native = useNativeBackend();
-  logBackendOnce(native);
 
   const loadPromise: Promise<string | null> = (async () => {
-    if (native) {
-      return loadFromKeychain(slotUserId);
+    const session = await resolveKeySession(slotUserId);
+    if (session.status !== "ready") return null;
+    if (privateKeyCache && cacheUserId === slotUserId) {
+      return privateKeyCache;
     }
-    return loadFromIdbWithLegacy(slotUserId);
+    return loadPrivateKeyRaw(slotUserId);
   })()
     .then((key) => {
-      // Only cache positive hits. Caching null made post-restore / migration
-      // loads look like permanent "no key" for the rest of the session.
-      if (privateKeyCacheVersion === versionAtStart && key) {
+      if (
+        privateKeyCacheVersion === versionAtStart &&
+        key &&
+        verifiedMatchUserId === slotUserId
+      ) {
         privateKeyCache = key;
         cacheUserId = slotUserId;
       }
@@ -408,7 +723,8 @@ export async function loadPrivateKey(userId: string): Promise<string | null> {
 }
 
 /**
- * True iff a private key for this account is present on this device.
+ * True iff a usable private key for this account is present on this device
+ * (matches the published server public key when one exists).
  */
 export async function hasPrivateKey(userId: string): Promise<boolean> {
   if (!userId) return false;
@@ -434,6 +750,9 @@ export async function removePrivateKey(userId: string): Promise<void> {
     if (loadPromiseUserId === userId) {
       privateKeyLoadPromise = null;
       loadPromiseUserId = null;
+    }
+    if (verifiedMatchUserId === userId) {
+      verifiedMatchUserId = null;
     }
   }
 

@@ -21,8 +21,7 @@ import {
   validateUsername,
 } from "@/lib/auth-email";
 import { Avatar, AVATARS, DEFAULT_AVATAR_ID } from "@/lib/avatars";
-import { generateKeyPair } from "@/lib/crypto";
-import { savePrivateKey } from "@/lib/keystore";
+import { generateKeyPairForNewAccount, KeyGenerationBlockedError } from "@/lib/keystore";
 import { createClient } from "@/lib/supabase/client";
 import { upsertWrappedKeyForUser, markWrapSetupComplete } from "@/lib/wrappedKeys";
 
@@ -147,22 +146,11 @@ export function SignupForm() {
         return;
       }
 
-      const { publicKey, privateKey } = await generateKeyPair();
-
-      // The private key is stored only on this device (namespaced by user id).
-      // It must NEVER be sent to Supabase or any server.
-      await savePrivateKey(privateKey, signUpData.user.id);
-
-      // Best-effort password wrap for cross-device restore. Failure is non-fatal —
-      // the chats-list ensureWrappedKey banner can retry later.
-      const wrapResult = await upsertWrappedKeyForUser(
+      // Order: save local → publish public key → wrap (password restore).
+      // Generation is refused if the account already has a published public key.
+      const { publicKey, privateKey } = await generateKeyPairForNewAccount(
         signUpData.user.id,
-        privateKey,
-        password,
       );
-      if (wrapResult.ok) {
-        markWrapSetupComplete(signUpData.user.id);
-      }
 
       const { error: profileError } = await supabase.from("profiles").insert({
         id: signUpData.user.id,
@@ -176,10 +164,25 @@ export function SignupForm() {
         return;
       }
 
+      // Best-effort password wrap for cross-device restore. Failure is non-fatal —
+      // the chats-list ensureWrappedKey banner can retry later.
+      const wrapResult = await upsertWrappedKeyForUser(
+        signUpData.user.id,
+        privateKey,
+        password,
+      );
+      if (wrapResult.ok) {
+        markWrapSetupComplete(signUpData.user.id);
+      }
+
       router.replace("/welcome");
       router.refresh();
-    } catch {
-      setError("Something went wrong. Try again.");
+    } catch (err) {
+      if (err instanceof KeyGenerationBlockedError) {
+        setError(err.message);
+      } else {
+        setError("Something went wrong. Try again.");
+      }
     } finally {
       setBusy(false);
     }

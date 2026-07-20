@@ -28,6 +28,16 @@ export async function generateKeyPair(): Promise<{
   };
 }
 
+/** Derive the Curve25519 public key that corresponds to a crypto_box secret key. */
+export async function publicKeyFromPrivateKey(
+  privateKeyB64: string,
+): Promise<string> {
+  await ready();
+  const sk = sodium.from_base64(privateKeyB64, B64());
+  const pk = sodium.crypto_scalarmult_base(sk);
+  return sodium.to_base64(pk, B64());
+}
+
 export async function encryptMessage(
   plaintext: string,
   theirPublicKeyB64: string,

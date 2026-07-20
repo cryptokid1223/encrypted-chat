@@ -5,8 +5,8 @@ import { CloseIcon } from "@/components/icons";
 import { InlineSpinner } from "@/components/inline-spinner";
 import {
   dismissWrapSetupBanner,
+  ensureWrappedKey,
   markWrapSetupComplete,
-  needsWrapSetupBanner,
   wrapAndUploadLocalKey,
 } from "@/lib/wrappedKeys";
 import { createClient } from "@/lib/supabase/client";
@@ -21,7 +21,7 @@ export function WrapSetupBanner({ userId }: { userId: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    void needsWrapSetupBanner(userId).then((needs) => {
+    void ensureWrappedKey(userId).then((needs) => {
       if (!cancelled) setVisible(needs);
     });
     return () => {
