@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NewChatModal } from "@/components/new-chat-modal";
+import { GroupAvatar } from "@/components/group-avatar";
 import { PencilIcon, SearchIcon } from "@/components/icons";
 import { useNicknames } from "@/components/nicknames-context";
 import { useProfile } from "@/components/profile-context";
@@ -11,6 +12,7 @@ import { fetchConversationPreview, previewFromMessageRow } from "@/lib/conversat
 import { contactMatchesQuery, displayName } from "@/lib/display-name";
 import { hasPrivateKey, loadPrivateKey } from "@/lib/keystore";
 import type { EncryptedMessageRow } from "@/lib/message-decrypt";
+import { fetchMyGroups, type GroupRow } from "@/lib/groups";
 import { Avatar, AVATARS } from "@/lib/avatars";
 import { createClient } from "@/lib/supabase/client";
 
@@ -40,12 +42,40 @@ type MessageInsert = {
   created_at: string;
 };
 
-function sortByActivity(rows: ConversationRow[]): ConversationRow[] {
+function sortDmByActivity(rows: ConversationRow[]): ConversationRow[] {
   return [...rows].sort(
     (a, b) =>
       new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime(),
   );
 }
+
+function sortInboxByActivity(rows: InboxItem[]): InboxItem[] {
+  return [...rows].sort(
+    (a, b) =>
+      new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime(),
+  );
+}
+
+type InboxItem =
+  | {
+      kind: "dm";
+      id: string;
+      otherUserId: string;
+      otherUsername: string;
+      otherAvatarId: string | null;
+      otherPublicKey: string;
+      lastActivity: string;
+      lastPreview: string;
+    }
+  | {
+      kind: "group";
+      id: string;
+      name: string;
+      avatarId: string | null;
+      memberCount: number;
+      lastActivity: string;
+      lastPreview: string;
+    };
 
 function ListSkeleton() {
   return (
@@ -116,16 +146,65 @@ const ConversationRowItem = memo(function ConversationRowItem({
   );
 });
 
+const GroupRowItem = memo(function GroupRowItem({
+  id,
+  name,
+  avatarId,
+  lastActivity,
+  lastPreview,
+  active,
+  isLast,
+}: {
+  id: string;
+  name: string;
+  avatarId: string | null;
+  lastActivity: string;
+  lastPreview: string;
+  active: boolean;
+  isLast: boolean;
+}) {
+  return (
+    <Link
+      href={`/chats/group/${id}`}
+      className={`row-press flex min-h-[64px] min-w-0 items-center gap-[var(--sp-3)] px-[var(--sp-4)] ${
+        active ? "bg-[var(--surface)]" : ""
+      }`}
+    >
+      <GroupAvatar avatarId={avatarId} size={48} className="shrink-0" />
+      <div
+        className={`flex min-w-0 flex-1 flex-col justify-center self-stretch py-[var(--sp-3)] ${
+          isLast ? "" : "border-b border-[var(--divider)]"
+        }`}
+      >
+        <div className="flex items-baseline justify-between gap-[var(--sp-2)]">
+          <p className="truncate text-[length:var(--text-body)] font-semibold text-[var(--text-primary)]">
+            {name}
+          </p>
+          <span className="shrink-0 text-[length:var(--text-caption)] text-[var(--text-secondary)]">
+            {formatListTime(lastActivity)}
+          </span>
+        </div>
+        <p className="mt-0.5 truncate text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]">
+          {lastPreview}
+        </p>
+      </div>
+    </Link>
+  );
+});
+
 export function ChatList({
   activeConversationId,
+  activeGroupId,
 }: {
   activeConversationId?: string | null;
+  activeGroupId?: string | null;
 }) {
   const { avatarId } = useProfile();
   const { nicknames, loaded: nicknamesLoaded, loadNicknames } = useNicknames();
   const [composeOpen, setComposeOpen] = useState(false);
   const [loadingList, setLoadingList] = useState(true);
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
+  const [groups, setGroups] = useState<GroupRow[]>([]);
   const [listError, setListError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [myUserId, setMyUserId] = useState<string | null>(null);
@@ -163,9 +242,49 @@ export function ChatList({
             : {}),
         };
       });
-      return sortByActivity(updated);
+      return sortDmByActivity(updated);
     });
   }, []);
+
+  const inboxItems = useMemo((): InboxItem[] => {
+    const dm: InboxItem[] = conversations.map((c) => ({
+      kind: "dm",
+      id: c.id,
+      otherUserId: c.otherUserId,
+      otherUsername: c.otherUsername,
+      otherAvatarId: c.otherAvatarId,
+      otherPublicKey: c.otherPublicKey,
+      lastActivity: c.lastActivity,
+      lastPreview: c.lastPreview,
+    }));
+    const grp: InboxItem[] = groups.map((g) => ({
+      kind: "group",
+      id: g.id,
+      name: g.name,
+      avatarId: g.avatarId,
+      memberCount: g.memberCount,
+      lastActivity: g.createdAt,
+      lastPreview: "No messages yet",
+    }));
+    return sortInboxByActivity([...dm, ...grp]);
+  }, [conversations, groups]);
+
+  const filteredInbox = useMemo(() => {
+    const q = searchQuery.trim();
+    if (!q) return inboxItems;
+    return inboxItems.filter((item) => {
+      if (item.kind === "group") {
+        return item.name.toLowerCase().includes(q.toLowerCase());
+      }
+      return contactMatchesQuery(
+        {
+          username: item.otherUsername,
+          nickname: nicknames[item.otherUserId] ?? null,
+        },
+        q,
+      );
+    });
+  }, [inboxItems, nicknames, searchQuery]);
 
   useEffect(() => {
     return () => {
@@ -203,7 +322,7 @@ export function ChatList({
         myPrivateKeyRef.current = myPrivateKey;
       }
 
-      const [convRows] = await Promise.all([
+      const [convRows, groupRows] = await Promise.all([
         supabase
           .from("conversations")
           .select("id, participant_a, participant_b, created_at")
@@ -213,8 +332,11 @@ export function ChatList({
             if (error) throw error;
             return data;
           }),
-        loadNicknames(),
+        fetchMyGroups(user.id),
       ]);
+
+      await loadNicknames();
+      setGroups(groupRows);
 
       if (!convRows || convRows.length === 0) {
         setConversations([]);
@@ -300,7 +422,7 @@ export function ChatList({
         }),
       );
 
-      setConversations(sortByActivity(next));
+      setConversations(sortDmByActivity(next));
     } catch {
       setListError("Could not load conversations.");
     } finally {
@@ -333,7 +455,7 @@ export function ChatList({
 
       setConversations((prev) => {
         if (prev.some((c) => c.id === row.id)) return prev;
-        return sortByActivity([
+        return sortDmByActivity([
           {
             id: row.id,
             otherUserId: otherId,
@@ -349,20 +471,6 @@ export function ChatList({
     },
     [],
   );
-
-  const filteredConversations = useMemo(() => {
-    const q = searchQuery.trim();
-    if (!q) return conversations;
-    return conversations.filter((c) =>
-      contactMatchesQuery(
-        {
-          username: c.otherUsername,
-          nickname: nicknames[c.otherUserId] ?? null,
-        },
-        q,
-      ),
-    );
-  }, [conversations, nicknames, searchQuery]);
 
   useEffect(() => {
     void loadConversations();
@@ -510,9 +618,11 @@ export function ChatList({
             </button>
             <Link
               href={
-                activeConversationId
-                  ? `/settings?returnTo=${encodeURIComponent(`/chats/${activeConversationId}`)}`
-                  : "/settings"
+                activeGroupId
+                  ? `/settings?returnTo=${encodeURIComponent(`/chats/group/${activeGroupId}`)}`
+                  : activeConversationId
+                    ? `/settings?returnTo=${encodeURIComponent(`/chats/${activeConversationId}`)}`
+                    : "/settings"
               }
               aria-label="Profile and settings"
               className="pressable flex h-11 w-11 items-center justify-center"
@@ -523,7 +633,7 @@ export function ChatList({
         </div>
       </header>
 
-      {!showLoading && conversations.length > 0 ? (
+      {!showLoading && inboxItems.length > 0 ? (
         <div className="shrink-0 px-[var(--sp-4)] py-[var(--sp-2)]">
           <label className="relative block">
             <SearchIcon className="pointer-events-none absolute left-[var(--sp-3)] top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-secondary)]" />
@@ -555,7 +665,7 @@ export function ChatList({
               >
                 {listError}
               </p>
-            ) : conversations.length === 0 ? (
+            ) : inboxItems.length === 0 ? (
               <div
                 className="flex flex-col items-center px-[var(--sp-5)] pb-[var(--sp-8)] text-center"
                 style={{ paddingTop: "min(40vh, 280px)" }}
@@ -584,24 +694,36 @@ export function ChatList({
                   New message
                 </button>
               </div>
-            ) : filteredConversations.length === 0 ? (
+            ) : filteredInbox.length === 0 ? (
               <p className="px-[var(--sp-4)] py-[var(--sp-6)] text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]">
                 No matches.
               </p>
             ) : (
               <ul className="pb-[var(--sp-8)]">
-                {filteredConversations.map((c, index) => (
-                  <li key={c.id}>
-                    <ConversationRowItem
-                      id={c.id}
-                      otherUsername={c.otherUsername}
-                      otherAvatarId={c.otherAvatarId}
-                      nickname={nicknames[c.otherUserId] ?? null}
-                      lastActivity={c.lastActivity}
-                      lastPreview={c.lastPreview}
-                      active={activeConversationId === c.id}
-                      isLast={index === filteredConversations.length - 1}
-                    />
+                {filteredInbox.map((item, index) => (
+                  <li key={`${item.kind}-${item.id}`}>
+                    {item.kind === "group" ? (
+                      <GroupRowItem
+                        id={item.id}
+                        name={item.name}
+                        avatarId={item.avatarId}
+                        lastActivity={item.lastActivity}
+                        lastPreview={item.lastPreview}
+                        active={activeGroupId === item.id}
+                        isLast={index === filteredInbox.length - 1}
+                      />
+                    ) : (
+                      <ConversationRowItem
+                        id={item.id}
+                        otherUsername={item.otherUsername}
+                        otherAvatarId={item.otherAvatarId}
+                        nickname={nicknames[item.otherUserId] ?? null}
+                        lastActivity={item.lastActivity}
+                        lastPreview={item.lastPreview}
+                        active={activeConversationId === item.id}
+                        isLast={index === filteredInbox.length - 1}
+                      />
+                    )}
                   </li>
                 ))}
               </ul>
@@ -610,7 +732,11 @@ export function ChatList({
         )}
       </div>
 
-      <NewChatModal open={composeOpen} onClose={() => setComposeOpen(false)} />
+      <NewChatModal
+        open={composeOpen}
+        onClose={() => setComposeOpen(false)}
+        onInboxChanged={() => void loadConversations()}
+      />
     </div>
   );
 }

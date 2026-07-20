@@ -23,9 +23,12 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const isChatList = pathname === "/chats";
   const isSettings = pathname === "/settings";
-  const activeConversationId = pathname.startsWith("/chats/")
-    ? pathname.slice("/chats/".length).split("/")[0] || null
-    : null;
+  const groupMatch = pathname.match(/^\/chats\/group\/([^/]+)/);
+  const activeGroupId = groupMatch?.[1] ?? null;
+  const activeConversationId =
+    !activeGroupId && pathname.startsWith("/chats/")
+      ? pathname.slice("/chats/".length).split("/")[0] || null
+      : null;
 
   return (
     <div className="safe-px flex h-app w-full min-w-0 overflow-hidden overflow-x-hidden bg-[#0F0E0D]">
@@ -35,7 +38,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             isChatList ? "flex" : "hidden md:flex"
           }`}
         >
-          <ChatList activeConversationId={activeConversationId} />
+          <ChatList
+            activeConversationId={activeConversationId}
+            activeGroupId={activeGroupId}
+          />
         </aside>
 
         <main
@@ -43,7 +49,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             isChatList && !isSettings ? "hidden md:flex" : "flex"
           }`}
         >
-          {isChatList && !isSettings ? <EmptyChatPane /> : children}
+          {isChatList && !isSettings && !activeGroupId && !activeConversationId ? (
+            <EmptyChatPane />
+          ) : (
+            children
+          )}
         </main>
       </div>
     </div>

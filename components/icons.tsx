@@ -193,6 +193,27 @@ export function PersonIcon(props: IconProps) {
   );
 }
 
+export function PeopleIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
+      <circle cx="9" cy="9" r="2.75" stroke="currentColor" strokeWidth="1.75" />
+      <path
+        d="M4 19c0-2.8 2.2-5 5-5"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+      />
+      <circle cx="16" cy="10" r="2.25" stroke="currentColor" strokeWidth="1.75" />
+      <path
+        d="M13 19c0-2.2 1.8-4 4-4 1.1 0 2.1.4 2.8 1.2"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export function KeyIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
