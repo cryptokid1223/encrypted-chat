@@ -13,6 +13,18 @@ import { PhotoViewerHostProvider } from "@/components/photo-viewer-host";
 import { useNicknames } from "@/components/nicknames-context";
 import { useVisualViewport } from "@/hooks/useVisualViewport";
 import { useConversationAnchoring } from "@/hooks/useConversationAnchoring";
+import {
+  GROUP_FETCH_LIMIT,
+  PAGE_SIZE,
+  captureScrollAnchor,
+  chronologicalAsc,
+  cursorFromOldestRow,
+  olderThanOrFilter,
+  restoreScrollAnchor,
+  takeUniqueGroupRowsByUuid,
+  type HistoryCursor,
+  type ScrollAnchor,
+} from "@/hooks/messagePagination";
 import { uploadEncryptedAttachment } from "@/lib/attachmentStorage";
 import { isSameCalendarDay } from "@/lib/chat";
 import { encryptMessage } from "@/lib/crypto";
@@ -40,6 +52,7 @@ import { hasPrivateKey, loadPrivateKey } from "@/lib/keystore";
 import { buildAttachmentBody } from "@/lib/messageContent";
 import { createClient } from "@/lib/supabase/client";
 import { stopVoicePlayback } from "@/lib/voicePlayer";
+import { InlineSpinner } from "@/components/inline-spinner";
 
 type DisplayMessage = {
   id: string;
@@ -119,6 +132,7 @@ export function GroupRoom() {
 
   const messagesRef = useRef<DisplayMessage[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const topSentinelRef = useRef<HTMLDivElement>(null);
   const photoViewerHostRef = useRef<HTMLDivElement>(null);
   const seenRowIdsRef = useRef(new Set<string>());
   const seenMessageUuidsRef = useRef(new Set<string>());
@@ -131,6 +145,13 @@ export function GroupRoom() {
   );
   const initialMessageIdsRef = useRef<Set<string> | null>(null);
   const [loadedGroupId, setLoadedGroupId] = useState<string | null>(null);
+  const [hasMoreHistory, setHasMoreHistory] = useState(true);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const hasMoreHistoryRef = useRef(true);
+  const loadingOlderRef = useRef(false);
+  const historyCursorRef = useRef<HistoryCursor | null>(null);
+  const pendingScrollAnchorRef = useRef<ScrollAnchor | null>(null);
+  const groupIdRef = useRef(groupId);
   const pendingFileRef = useRef<Map<string, File>>(new Map());
   const pendingAudioRef = useRef<
     Map<string, { bytes: Uint8Array; mime: string; durationMs: number }>
@@ -139,6 +160,14 @@ export function GroupRoom() {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  useEffect(() => {
+    groupIdRef.current = groupId;
+  }, [groupId]);
+
+  useEffect(() => {
+    hasMoreHistoryRef.current = hasMoreHistory;
+  }, [hasMoreHistory]);
 
   useLayoutEffect(() => {
     setStatus("loading");
@@ -152,7 +181,13 @@ export function GroupRoom() {
     setGroupCreatedAt(null);
     setGroupInfoOpen(false);
     setLoadedGroupId(null);
+    setHasMoreHistory(true);
+    setLoadingOlder(false);
     initialMessageIdsRef.current = null;
+    hasMoreHistoryRef.current = true;
+    loadingOlderRef.current = false;
+    historyCursorRef.current = null;
+    pendingScrollAnchorRef.current = null;
     pendingFileRef.current.clear();
     pendingAudioRef.current.clear();
   }, [groupId]);
@@ -161,6 +196,7 @@ export function GroupRoom() {
     scrollerRef,
     contentRef,
     paneStyle,
+    isAnchoring,
     isAnchoringRef,
     scrollToBottom,
     isNearBottom,
@@ -168,6 +204,13 @@ export function GroupRoom() {
     groupId,
     status === "ready" && loadedGroupId === groupId,
   );
+
+  useLayoutEffect(() => {
+    const anchor = pendingScrollAnchorRef.current;
+    if (!anchor) return;
+    pendingScrollAnchorRef.current = null;
+    restoreScrollAnchor(scrollerRef.current, anchor);
+  }, [messages, scrollerRef]);
 
   useEffect(() => {
     return () => {
@@ -250,6 +293,121 @@ export function GroupRoom() {
 
   useVisualViewport(scrollOnViewport);
 
+  const loadOlderMessages = useCallback(async () => {
+    if (loadingOlderRef.current) return;
+    if (!hasMoreHistoryRef.current) return;
+    if (isAnchoringRef.current) return;
+
+    const cursor = historyCursorRef.current;
+    if (!cursor) {
+      hasMoreHistoryRef.current = false;
+      setHasMoreHistory(false);
+      return;
+    }
+
+    const userId = myUserIdRef.current;
+    const privateKey = myPrivateKeyRef.current;
+    if (!userId || !privateKey) return;
+
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+
+    try {
+      const supabase = createClient();
+      const startedFor = groupIdRef.current;
+      const { data: rows, error: messagesError } = await supabase
+        .from("group_messages")
+        .select(
+          "id, group_id, message_uuid, sender_id, recipient_id, ciphertext, nonce, created_at",
+        )
+        .eq("group_id", startedFor)
+        .eq("recipient_id", userId)
+        .or(olderThanOrFilter(cursor))
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(GROUP_FETCH_LIMIT);
+
+      if (messagesError) return;
+
+      const newestFirst = (rows ?? []) as GroupMessageRow[];
+      if (newestFirst.length < GROUP_FETCH_LIMIT) {
+        hasMoreHistoryRef.current = false;
+        setHasMoreHistory(false);
+      }
+      if (newestFirst.length === 0) return;
+
+      const uniqueNewestFirst = takeUniqueGroupRowsByUuid(
+        newestFirst,
+        PAGE_SIZE,
+      );
+      const chronological = chronologicalAsc(uniqueNewestFirst);
+      const decrypted = await decryptGroupMessageBatch(
+        chronological,
+        senderPublicKeyByUserIdRef.current,
+        privateKey,
+      );
+
+      if (groupIdRef.current !== startedFor) return;
+
+      for (const row of newestFirst) {
+        seenRowIdsRef.current.add(row.id);
+      }
+
+      const fresh = decrypted
+        .filter((m) => !seenMessageUuidsRef.current.has(m.id))
+        .map((m) => ({
+          id: m.id,
+          senderId: m.senderId,
+          body: m.body,
+          createdAt: m.createdAt,
+          decryptFailed: m.decryptFailed,
+        }));
+
+      for (const m of fresh) {
+        seenMessageUuidsRef.current.add(m.id);
+        initialMessageIdsRef.current?.add(m.id);
+      }
+
+      historyCursorRef.current = cursorFromOldestRow(chronological[0]);
+
+      if (fresh.length === 0) return;
+
+      pendingScrollAnchorRef.current = captureScrollAnchor(scrollerRef.current);
+      setMessages((prev) => [...fresh, ...prev]);
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [isAnchoringRef, scrollerRef]);
+
+  useEffect(() => {
+    if (status !== "ready" || loadedGroupId !== groupId) return;
+    if (!hasMoreHistory || isAnchoring) return;
+
+    const root = scrollerRef.current;
+    const sentinel = topSentinelRef.current;
+    if (!root || !sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        void loadOlderMessages();
+      },
+      { root, rootMargin: "800px 0px 0px 0px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [
+    status,
+    loadedGroupId,
+    groupId,
+    hasMoreHistory,
+    isAnchoring,
+    loadOlderMessages,
+    scrollerRef,
+    messages.length,
+  ]);
+
   useEffect(() => {
     let cancelled = false;
     const supabase = createClient();
@@ -261,6 +419,9 @@ export function GroupRoom() {
       seenRowIdsRef.current = new Set();
       seenMessageUuidsRef.current = new Set();
       pendingByUuidRef.current.clear();
+      historyCursorRef.current = null;
+      hasMoreHistoryRef.current = true;
+      setHasMoreHistory(true);
 
       try {
         const {
@@ -329,7 +490,9 @@ export function GroupRoom() {
           )
           .eq("group_id", groupId)
           .eq("recipient_id", user.id)
-          .order("created_at", { ascending: true });
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .limit(GROUP_FETCH_LIMIT);
 
         if (messagesError) {
           if (!cancelled) {
@@ -339,20 +502,31 @@ export function GroupRoom() {
           return;
         }
 
+        const newestFirst = (rows ?? []) as GroupMessageRow[];
+        const uniqueNewestFirst = takeUniqueGroupRowsByUuid(
+          newestFirst,
+          PAGE_SIZE,
+        );
+        const chronological = chronologicalAsc(uniqueNewestFirst);
         const decrypted = await decryptGroupMessageBatch(
-          (rows ?? []) as GroupMessageRow[],
+          chronological,
           senderKeyMap,
           privateKey,
         );
 
         if (cancelled) return;
 
-        for (const row of rows ?? []) {
+        for (const row of newestFirst) {
           seenRowIdsRef.current.add(row.id as string);
         }
         for (const m of decrypted) {
           seenMessageUuidsRef.current.add(m.id);
         }
+
+        historyCursorRef.current = cursorFromOldestRow(chronological[0]);
+        const more = newestFirst.length >= GROUP_FETCH_LIMIT;
+        hasMoreHistoryRef.current = more;
+        setHasMoreHistory(more);
 
         membersRef.current = membersResult.members;
         senderPublicKeyByUserIdRef.current = senderKeyMap;
@@ -1076,6 +1250,7 @@ export function GroupRoom() {
     memberCount === 1 ? "1 member" : `${memberCount} members`;
 
   const showJoinPill =
+    !hasMoreHistory &&
     Boolean(myJoinedAt && groupCreatedAt && messages.length > 0) &&
     new Date(myJoinedAt!).getTime() >
       new Date(groupCreatedAt!).getTime() + 1000;
@@ -1135,6 +1310,16 @@ export function GroupRoom() {
               </div>
             ) : (
               <ul className="flex flex-col">
+                {hasMoreHistory ? (
+                  <li className="h-px w-full shrink-0 list-none" aria-hidden>
+                    <div ref={topSentinelRef} className="h-px w-full" />
+                  </li>
+                ) : null}
+                {loadingOlder ? (
+                  <li className="flex list-none justify-center py-3" aria-hidden>
+                    <InlineSpinner className="h-4 w-4 text-[var(--text-secondary)]" />
+                  </li>
+                ) : null}
                 {showJoinPill ? (
                   <li>
                     <div

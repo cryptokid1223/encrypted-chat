@@ -24,6 +24,7 @@ export function useConversationAnchoring(conversationKey: string, ready: boolean
   const anchoringGenerationRef = useRef(0);
 
   const [paneOpacity, setPaneOpacity] = useState(0);
+  const [isAnchoring, setIsAnchoring] = useState(true);
 
   const scrollToBottomInstant = useCallback(() => {
     const el = scrollerRef.current;
@@ -48,6 +49,7 @@ export function useConversationAnchoring(conversationKey: string, ready: boolean
   useEffect(() => {
     anchoringGenerationRef.current += 1;
     isAnchoringRef.current = true;
+    setIsAnchoring(true);
     setPaneOpacity(0);
     scrollToBottomInstant();
   }, [conversationKey, scrollToBottomInstant]);
@@ -57,6 +59,7 @@ export function useConversationAnchoring(conversationKey: string, ready: boolean
 
     const generation = ++anchoringGenerationRef.current;
     isAnchoringRef.current = true;
+    setIsAnchoring(true);
     setPaneOpacity(0);
 
     let stabilityTimer: ReturnType<typeof setTimeout> | null = null;
@@ -74,6 +77,7 @@ export function useConversationAnchoring(conversationKey: string, ready: boolean
 
       scrollToBottomInstant();
       isAnchoringRef.current = false;
+      setIsAnchoring(false);
 
       if (prefersReducedMotion()) {
         setPaneOpacity(1);
@@ -131,6 +135,7 @@ export function useConversationAnchoring(conversationKey: string, ready: boolean
     scrollerRef,
     contentRef,
     paneStyle,
+    isAnchoring,
     isAnchoringRef,
     scrollToBottom,
     isNearBottom,

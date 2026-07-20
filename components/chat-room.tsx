@@ -27,14 +27,24 @@ import { ChatComposer, type VoiceRecordingPayload } from "@/components/chat-comp
 import { PhotoViewerHostProvider } from "@/components/photo-viewer-host";
 import { useVisualViewport } from "@/hooks/useVisualViewport";
 import { useConversationAnchoring } from "@/hooks/useConversationAnchoring";
+import {
+  PAGE_SIZE,
+  captureScrollAnchor,
+  chronologicalAsc,
+  cursorFromOldestRow,
+  olderThanOrFilter,
+  restoreScrollAnchor,
+  type HistoryCursor,
+  type ScrollAnchor,
+} from "@/hooks/messagePagination";
 import type {
-  DecryptedMessage,
   EncryptedMessageRow,
 } from "@/lib/message-decrypt";
 import {
   decryptMessageBatch,
   decryptMessageRow,
 } from "@/lib/message-decrypt";
+import { InlineSpinner } from "@/components/inline-spinner";
 
 type DisplayMessage = {
   id: string;
@@ -114,6 +124,7 @@ export function ChatRoom() {
   >(new Map());
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const topSentinelRef = useRef<HTMLDivElement>(null);
   const photoViewerHostRef = useRef<HTMLDivElement>(null);
   const seenIdsRef = useRef(new Set<string>());
   const myUserIdRef = useRef<string | null>(null);
@@ -128,6 +139,13 @@ export function ChatRoom() {
   const [loadedConversationId, setLoadedConversationId] = useState<
     string | null
   >(null);
+  const [hasMoreHistory, setHasMoreHistory] = useState(true);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const hasMoreHistoryRef = useRef(true);
+  const loadingOlderRef = useRef(false);
+  const historyCursorRef = useRef<HistoryCursor | null>(null);
+  const pendingScrollAnchorRef = useRef<ScrollAnchor | null>(null);
+  const conversationIdRef = useRef(conversationId);
 
   useLayoutEffect(() => {
     setStatus("loading");
@@ -137,15 +155,30 @@ export function ChatRoom() {
     setOtherUserId(null);
     setOtherAvatarId(null);
     setLoadedConversationId(null);
+    setHasMoreHistory(true);
+    setLoadingOlder(false);
     initialMessageIdsRef.current = null;
+    hasMoreHistoryRef.current = true;
+    loadingOlderRef.current = false;
+    historyCursorRef.current = null;
+    pendingScrollAnchorRef.current = null;
     pendingFileRef.current.clear();
     pendingAudioRef.current.clear();
   }, [conversationId]);
+
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+  }, [conversationId]);
+
+  useEffect(() => {
+    hasMoreHistoryRef.current = hasMoreHistory;
+  }, [hasMoreHistory]);
 
   const {
     scrollerRef,
     contentRef,
     paneStyle,
+    isAnchoring,
     isAnchoringRef,
     scrollToBottom,
     isNearBottom,
@@ -153,6 +186,13 @@ export function ChatRoom() {
     conversationId,
     status === "ready" && loadedConversationId === conversationId,
   );
+
+  useLayoutEffect(() => {
+    const anchor = pendingScrollAnchorRef.current;
+    if (!anchor) return;
+    pendingScrollAnchorRef.current = null;
+    restoreScrollAnchor(scrollerRef.current, anchor);
+  }, [messages, scrollerRef]);
 
   useEffect(() => {
     return () => {
@@ -184,6 +224,101 @@ export function ChatRoom() {
 
   useVisualViewport(scrollOnViewport);
 
+  const loadOlderMessages = useCallback(async () => {
+    if (loadingOlderRef.current) return;
+    if (!hasMoreHistoryRef.current) return;
+    if (isAnchoringRef.current) return;
+
+    const cursor = historyCursorRef.current;
+    if (!cursor) {
+      hasMoreHistoryRef.current = false;
+      setHasMoreHistory(false);
+      return;
+    }
+
+    const theirKey = theirPublicKeyRef.current;
+    const myKey = myPrivateKeyRef.current;
+    if (!theirKey || !myKey) return;
+
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+
+    try {
+      const supabase = createClient();
+      const { data: rows, error: messagesError } = await supabase
+        .from("messages")
+        .select("id, sender_id, ciphertext, nonce, created_at")
+        .eq("conversation_id", conversationIdRef.current)
+        .or(olderThanOrFilter(cursor))
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(PAGE_SIZE);
+
+      if (messagesError) return;
+
+      const newestFirst = (rows ?? []) as EncryptedMessageRow[];
+      if (newestFirst.length < PAGE_SIZE) {
+        hasMoreHistoryRef.current = false;
+        setHasMoreHistory(false);
+      }
+      if (newestFirst.length === 0) return;
+
+      const startedFor = conversationIdRef.current;
+      const chronological = chronologicalAsc(newestFirst);
+      const decrypted = await decryptMessageBatch(
+        chronological,
+        theirKey,
+        myKey,
+      );
+
+      if (conversationIdRef.current !== startedFor) return;
+
+      const fresh = decrypted.filter((m) => !seenIdsRef.current.has(m.id));
+      for (const m of fresh) {
+        seenIdsRef.current.add(m.id);
+        initialMessageIdsRef.current?.add(m.id);
+      }
+
+      historyCursorRef.current = cursorFromOldestRow(chronological[0]);
+
+      if (fresh.length === 0) return;
+
+      pendingScrollAnchorRef.current = captureScrollAnchor(scrollerRef.current);
+      setMessages((prev) => [...fresh, ...prev]);
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [isAnchoringRef, scrollerRef]);
+
+  useEffect(() => {
+    if (status !== "ready" || loadedConversationId !== conversationId) return;
+    if (!hasMoreHistory || isAnchoring) return;
+
+    const root = scrollerRef.current;
+    const sentinel = topSentinelRef.current;
+    if (!root || !sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        void loadOlderMessages();
+      },
+      { root, rootMargin: "800px 0px 0px 0px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [
+    status,
+    loadedConversationId,
+    conversationId,
+    hasMoreHistory,
+    isAnchoring,
+    loadOlderMessages,
+    scrollerRef,
+    messages.length,
+  ]);
+
   useEffect(() => {
     let cancelled = false;
     const supabase = createClient();
@@ -194,6 +329,9 @@ export function ChatRoom() {
       setError(null);
       seenIdsRef.current = new Set();
       pendingByCipherRef.current.clear();
+      historyCursorRef.current = null;
+      hasMoreHistoryRef.current = true;
+      setHasMoreHistory(true);
 
       try {
         const {
@@ -268,7 +406,9 @@ export function ChatRoom() {
           .from("messages")
           .select("id, sender_id, ciphertext, nonce, created_at")
           .eq("conversation_id", conversationId)
-          .order("created_at", { ascending: true });
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .limit(PAGE_SIZE);
 
         if (messagesError) {
           if (!cancelled) {
@@ -278,8 +418,10 @@ export function ChatRoom() {
           return;
         }
 
+        const newestFirst = (rows ?? []) as EncryptedMessageRow[];
+        const chronological = chronologicalAsc(newestFirst);
         const decrypted = await decryptMessageBatch(
-          (rows ?? []) as EncryptedMessageRow[],
+          chronological,
           otherProfile.public_key,
           privateKey,
         );
@@ -289,6 +431,11 @@ export function ChatRoom() {
         for (const m of decrypted) {
           seenIdsRef.current.add(m.id);
         }
+
+        historyCursorRef.current = cursorFromOldestRow(chronological[0]);
+        const more = newestFirst.length >= PAGE_SIZE;
+        hasMoreHistoryRef.current = more;
+        setHasMoreHistory(more);
 
         setMyUserId(user.id);
         setTheirPublicKey(otherProfile.public_key);
@@ -951,6 +1098,16 @@ export function ChatRoom() {
             </div>
           ) : (
             <ul className="flex flex-col">
+              {hasMoreHistory ? (
+                <li className="h-px w-full shrink-0 list-none" aria-hidden>
+                  <div ref={topSentinelRef} className="h-px w-full" />
+                </li>
+              ) : null}
+              {loadingOlder ? (
+                <li className="flex list-none justify-center py-3" aria-hidden>
+                  <InlineSpinner className="h-4 w-4 text-[var(--text-secondary)]" />
+                </li>
+              ) : null}
               {messages.map((m, i) => {
                 const mine = m.senderId === myUserId;
                 const prev = messages[i - 1];
