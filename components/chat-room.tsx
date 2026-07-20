@@ -11,7 +11,7 @@ import { isSameCalendarDay } from "@/lib/chat";
 import { encryptMessage } from "@/lib/crypto";
 import { encryptFile } from "@/lib/fileCrypto";
 import { uploadEncryptedAttachment } from "@/lib/attachmentStorage";
-import { ImageTooLargeError, processImageForSend } from "@/lib/imageProcessing";
+import { ImageTooLargeError, processImageForSend, processVideoForSend, VideoTooLargeError, VideoUnsupportedError } from "@/lib/imageProcessing";
 import { buildAttachmentBody } from "@/lib/messageContent";
 import { Avatar } from "@/lib/avatars";
 import {
@@ -41,6 +41,10 @@ type DisplayMessage = {
   createdAt: string;
   failed?: boolean;
   localPreviewUrl?: string;
+  pendingAttachment?: Pick<
+    import("@/lib/fileCrypto").AttachmentMeta,
+    "kind" | "w" | "h" | "durationMs"
+  >;
 };
 
 /** Render-layer grouping: same sender within 60 seconds. */
@@ -469,6 +473,144 @@ export function ChatRoom() {
     [conversationId, requireKeyImport],
   );
 
+  const runVideoSend = useCallback(
+    async (file: File, existingId?: string) => {
+      const myId = myUserIdRef.current;
+      if (!myId) return;
+
+      setAttachError(null);
+      setAttachUploading(true);
+
+      const tempId =
+        existingId ??
+        `local:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+
+      pendingFileRef.current.set(tempId, file);
+
+      if (file.size > 50 * 1024 * 1024) {
+        setAttachError("Videos must be under 50MB.");
+        setAttachUploading(false);
+        return;
+      }
+
+      if (!existingId) {
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === tempId)) return prev;
+          return [
+            ...prev,
+            {
+              id: tempId,
+              senderId: myId,
+              body: "",
+              createdAt: new Date().toISOString(),
+              pendingAttachment: { kind: "video", w: 200, h: 200 },
+            },
+          ];
+        });
+      } else {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === existingId
+              ? {
+                  ...m,
+                  failed: false,
+                  pendingAttachment: m.pendingAttachment ?? {
+                    kind: "video",
+                    w: 200,
+                    h: 200,
+                  },
+                }
+              : m,
+          ),
+        );
+      }
+
+      let previewUrl: string | undefined;
+
+      try {
+        const processed = await processVideoForSend(file);
+
+        if (processed.thumbBytes) {
+          previewUrl = URL.createObjectURL(
+            new Blob([processed.thumbBytes.slice()], { type: "image/jpeg" }),
+          );
+        }
+
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempId
+              ? {
+                  ...m,
+                  localPreviewUrl: m.localPreviewUrl ?? previewUrl,
+                  pendingAttachment: {
+                    kind: "video",
+                    w: processed.w,
+                    h: processed.h,
+                    durationMs: processed.durationMs,
+                  },
+                }
+              : m,
+          ),
+        );
+
+        const { ciphertext, fileKey, nonce } = await encryptFile(processed.bytes);
+
+        let thumbMeta: { path: string; key: string; nonce: string } | undefined;
+        if (processed.thumbBytes) {
+          const thumbEnc = await encryptFile(processed.thumbBytes);
+          const thumbPath = await uploadEncryptedAttachment(
+            thumbEnc.ciphertext,
+            myId,
+          );
+          thumbMeta = {
+            path: thumbPath,
+            key: thumbEnc.fileKey,
+            nonce: thumbEnc.nonce,
+          };
+        }
+
+        const path = await uploadEncryptedAttachment(ciphertext, myId);
+        const body = buildAttachmentBody({
+          v: 1,
+          kind: "video",
+          path,
+          key: fileKey,
+          nonce,
+          mime: processed.mime,
+          size: processed.bytes.length,
+          w: processed.w,
+          h: processed.h,
+          durationMs: processed.durationMs,
+          thumb: thumbMeta,
+        });
+
+        sendPlaintext(body, tempId, {
+          manageSendingState: false,
+          preservePreview: true,
+        });
+      } catch (err) {
+        if (previewUrl) {
+          URL.revokeObjectURL(previewUrl);
+        }
+        if (
+          err instanceof VideoTooLargeError ||
+          err instanceof VideoUnsupportedError
+        ) {
+          setAttachError(err.message);
+          setMessages((prev) => prev.filter((m) => m.id !== tempId));
+          pendingFileRef.current.delete(tempId);
+          return;
+        }
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)),
+        );
+      } finally {
+        setAttachUploading(false);
+      }
+    },
+    [sendPlaintext],
+  );
+
   const runAttachmentSend = useCallback(
     async (file: File, existingId?: string) => {
       const myId = myUserIdRef.current;
@@ -549,11 +691,17 @@ export function ChatRoom() {
     [sendPlaintext],
   );
 
-  const handlePhotoSelected = useCallback(
+  const handleFileSelected = useCallback(
     (file: File) => {
-      void runAttachmentSend(file);
+      if (file.type.startsWith("image/")) {
+        void runAttachmentSend(file);
+      } else if (file.type.startsWith("video/")) {
+        void runVideoSend(file);
+      } else {
+        setAttachError("Unsupported file type.");
+      }
     },
-    [runAttachmentSend],
+    [runAttachmentSend, runVideoSend],
   );
 
   const handleSend = useCallback(
@@ -567,14 +715,18 @@ export function ChatRoom() {
     (id: string) => {
       const file = pendingFileRef.current.get(id);
       if (file) {
-        void runAttachmentSend(file, id);
+        if (file.type.startsWith("video/")) {
+          void runVideoSend(file, id);
+        } else {
+          void runAttachmentSend(file, id);
+        }
         return;
       }
       const msg = messagesRef.current.find((m) => m.id === id);
       if (!msg) return;
       sendPlaintext(msg.body, id);
     },
-    [sendPlaintext, runAttachmentSend],
+    [sendPlaintext, runAttachmentSend, runVideoSend],
   );
 
   if (status === "loading") {
@@ -720,6 +872,7 @@ export function ChatRoom() {
                       }
                       failed={m.failed}
                       localPreviewUrl={m.localPreviewUrl}
+                      pendingAttachment={m.pendingAttachment}
                       onRetry={handleRetry}
                     />
                   </li>
@@ -733,7 +886,7 @@ export function ChatRoom() {
 
       <ChatComposer
         onSend={handleSend}
-        onPhotoSelected={handlePhotoSelected}
+        onFileSelected={handleFileSelected}
         disabled={sending}
         attachDisabled={attachUploading}
         attachError={attachError}

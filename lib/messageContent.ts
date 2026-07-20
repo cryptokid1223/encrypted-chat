@@ -34,13 +34,29 @@ export function parseMessageBody(plaintext: string): ParsedMessageBody {
 export function messagePreviewText(plaintext: string): string {
   const parsed = parseMessageBody(plaintext);
   if (parsed.type === "attachment") {
-    return "📷 Photo";
+    return attachmentPreviewLabel(parsed.meta);
   }
   const trimmed = parsed.text.trim();
   if (!trimmed) {
     return "Encrypted message";
   }
   return trimmed.length > 80 ? `${trimmed.slice(0, 80)}…` : trimmed;
+}
+
+/** Conversation list preview for attachment messages. */
+export function attachmentPreviewLabel(meta: AttachmentMeta): string {
+  if (meta.kind === "video") {
+    return "🎥 Video";
+  }
+  return "📷 Photo";
+}
+
+/** Format milliseconds as m:ss for video duration badges. */
+export function formatDurationMs(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSec / 60);
+  const seconds = totalSec % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 /** Display dimensions for attachment bubbles (max 75% width handled by CSS). */

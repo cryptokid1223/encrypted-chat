@@ -18,6 +18,10 @@ export type MessageBubbleProps = {
   animateIn?: boolean;
   failed?: boolean;
   localPreviewUrl?: string;
+  pendingAttachment?: Pick<
+    AttachmentMeta,
+    "kind" | "w" | "h" | "durationMs"
+  >;
   onRetry?: (id: string) => void;
 };
 
@@ -63,28 +67,32 @@ export const MessageBubble = memo(function MessageBubble({
   animateIn,
   failed,
   localPreviewUrl,
+  pendingAttachment,
   onRetry,
 }: MessageBubbleProps) {
   const radiusClass = bubbleRadiusClass(isMine, isFirstInGroup, isLastInGroup);
   const groupGap = isFirstInGroup ? "var(--sp-3)" : "2px";
   const parsed = parseMessageBody(body);
   const isAttachment =
-    parsed.type === "attachment" || Boolean(localPreviewUrl && !body);
+    parsed.type === "attachment" ||
+    Boolean((localPreviewUrl || pendingAttachment) && !body);
 
   const attachmentMeta: AttachmentMeta | null =
     parsed.type === "attachment"
       ? parsed.meta
-      : localPreviewUrl
+      : localPreviewUrl || pendingAttachment
         ? {
             v: 1,
-            kind: "image",
+            kind: pendingAttachment?.kind ?? "image",
             path: "",
             key: "",
             nonce: "",
-            mime: "image/jpeg",
+            mime:
+              pendingAttachment?.kind === "video" ? "video/mp4" : "image/jpeg",
             size: 0,
-            w: 200,
-            h: 200,
+            w: pendingAttachment?.w ?? 200,
+            h: pendingAttachment?.h ?? 200,
+            durationMs: pendingAttachment?.durationMs,
           }
         : null;
 

@@ -5,17 +5,21 @@ import { ArrowUpIcon, PlusIcon } from "@/components/icons";
 
 export function ChatComposer({
   onSend,
+  onFileSelected,
   onPhotoSelected,
   disabled,
   attachDisabled,
   attachError,
 }: {
   onSend: (text: string) => void;
+  onFileSelected?: (file: File) => void;
+  /** @deprecated Use onFileSelected */
   onPhotoSelected?: (file: File) => void;
   disabled?: boolean;
   attachDisabled?: boolean;
   attachError?: string | null;
 }) {
+  const handleFile = onFileSelected ?? onPhotoSelected;
   const [draft, setDraft] = useState("");
   const inputId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -48,20 +52,20 @@ export function ChatComposer({
             ref={fileInputRef}
             id={inputId}
             type="file"
-            accept="image/*"
+            accept="image/*,video/*"
             className="sr-only"
             onChange={(e) => {
               const file = e.target.files?.[0];
               e.target.value = "";
-              if (file && onPhotoSelected) {
-                onPhotoSelected(file);
+              if (file && handleFile) {
+                handleFile(file);
               }
             }}
           />
           <button
             type="button"
             disabled={attachDisabled}
-            aria-label="Attach photo"
+            aria-label="Attach photo or video"
             onClick={() => fileInputRef.current?.click()}
             className="pressable flex h-11 w-11 shrink-0 items-center justify-center text-[var(--text-secondary)] disabled:opacity-40"
           >

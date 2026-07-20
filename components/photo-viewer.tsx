@@ -16,12 +16,16 @@ function pinchDistance(t0: React.Touch, t1: React.Touch): number {
 
 export function PhotoViewer({
   src,
+  kind = "image",
   onClose,
 }: {
   src: string;
+  kind?: "image" | "video";
+  mime?: string;
   onClose: () => void;
 }) {
   const hostRef = usePhotoViewerHost();
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const scaleRef = useRef(1);
@@ -43,6 +47,17 @@ export function PhotoViewer({
   }, [onClose]);
 
   useEffect(() => {
+    return () => {
+      const video = videoRef.current;
+      if (video) {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     scaleRef.current = scale;
   }, [scale]);
 
@@ -55,9 +70,17 @@ export function PhotoViewer({
     setPan({ x: 0, y: 0 });
   }, []);
 
-  const handleBackdropClick = useCallback(() => {
+  const handleClose = useCallback(() => {
+    const video = videoRef.current;
+    if (video) {
+      video.pause();
+    }
     onClose();
   }, [onClose]);
+
+  const handleBackdropClick = useCallback(() => {
+    handleClose();
+  }, [handleClose]);
 
   const handleImagePointerDown = useCallback(
     (e: React.PointerEvent<HTMLImageElement>) => {
@@ -156,16 +179,18 @@ export function PhotoViewer({
   const host = hostRef?.current;
   if (!host) return null;
 
+  const label = kind === "video" ? "Video viewer" : "Photo viewer";
+
   return createPortal(
     <div
       className="absolute inset-0 z-[60] flex flex-col bg-black"
       role="dialog"
       aria-modal="true"
-      aria-label="Photo viewer"
+      aria-label={label}
     >
       <button
         type="button"
-        aria-label="Close photo viewer"
+        aria-label={`Close ${kind} viewer`}
         className="absolute inset-0"
         onClick={handleBackdropClick}
       />
@@ -175,7 +200,7 @@ export function PhotoViewer({
           aria-label="Close"
           onClick={(e) => {
             e.stopPropagation();
-            onClose();
+            handleClose();
           }}
           className="pressable pointer-events-auto flex h-11 w-11 items-center justify-center text-white"
         >
@@ -183,26 +208,39 @@ export function PhotoViewer({
         </button>
       </div>
       <div className="relative z-10 flex min-h-0 flex-1 items-center justify-center overflow-hidden px-[var(--sp-2)] pb-[var(--sp-4)]">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={src}
-          alt=""
-          draggable={false}
-          onClick={handleImageClick}
-          onPointerDown={handleImagePointerDown}
-          onPointerMove={handleImagePointerMove}
-          onPointerUp={handleImagePointerUp}
-          onPointerCancel={handleImagePointerUp}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-          onTouchCancel={handleTouchEnd}
-          className="pointer-events-auto max-h-full max-w-full select-none object-contain touch-none"
-          style={{
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
-            transformOrigin: "center center",
-          }}
-        />
+        {kind === "video" ? (
+          // eslint-disable-next-line jsx-a11y/media-has-caption
+          <video
+            ref={videoRef}
+            src={src}
+            controls
+            autoPlay
+            playsInline
+            className="pointer-events-auto max-h-full max-w-full object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={src}
+            alt=""
+            draggable={false}
+            onClick={handleImageClick}
+            onPointerDown={handleImagePointerDown}
+            onPointerMove={handleImagePointerMove}
+            onPointerUp={handleImagePointerUp}
+            onPointerCancel={handleImagePointerUp}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onTouchCancel={handleTouchEnd}
+            className="pointer-events-auto max-h-full max-w-full select-none object-contain touch-none"
+            style={{
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
+              transformOrigin: "center center",
+            }}
+          />
+        )}
       </div>
     </div>,
     host,

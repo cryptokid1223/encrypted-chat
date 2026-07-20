@@ -12,6 +12,8 @@ export interface AttachmentMeta {
   w?: number;
   h?: number;
   durationMs?: number;
+  /** Encrypted thumbnail blob (video attachments). */
+  thumb?: { path: string; key: string; nonce: string };
 }
 
 const B64 = () => sodium.base64_variants.ORIGINAL;

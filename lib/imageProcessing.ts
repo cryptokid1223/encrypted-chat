@@ -110,3 +110,145 @@ export async function processImageForSend(file: File): Promise<ProcessedImage> {
     cleanup();
   }
 }
+
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+const THUMB_MAX_EDGE = 640;
+const THUMB_JPEG_QUALITY = 0.7;
+const THUMB_SEEK_SEC = 0.1;
+const VIDEO_METADATA_TIMEOUT_MS = 30_000;
+const VIDEO_SEEK_TIMEOUT_MS = 10_000;
+
+export class VideoTooLargeError extends Error {
+  constructor() {
+    super("Videos must be under 50MB.");
+    this.name = "VideoTooLargeError";
+  }
+}
+
+export class VideoUnsupportedError extends Error {
+  constructor() {
+    super("This video can't be sent.");
+    this.name = "VideoUnsupportedError";
+  }
+}
+
+export type ProcessedVideo = {
+  bytes: Uint8Array;
+  mime: string;
+  w: number;
+  h: number;
+  durationMs: number;
+  thumbBytes: Uint8Array | null;
+};
+
+async function captureVideoThumbnail(
+  video: HTMLVideoElement,
+  width: number,
+  height: number,
+): Promise<Uint8Array> {
+  const seekTo =
+    video.duration > THUMB_SEEK_SEC * 2
+      ? THUMB_SEEK_SEC
+      : Math.max(0, video.duration / 2);
+
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Seek timeout")), VIDEO_SEEK_TIMEOUT_MS);
+    video.onseeked = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+    video.onerror = () => {
+      clearTimeout(timeout);
+      reject(new Error("Seek failed"));
+    };
+    video.currentTime = seekTo;
+  });
+
+  const scale = Math.min(1, THUMB_MAX_EDGE / Math.max(width, height));
+  const w = Math.max(1, Math.round(width * scale));
+  const h = Math.max(1, Math.round(height * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Could not capture thumbnail.");
+  }
+
+  ctx.drawImage(video, 0, 0, w, h);
+  const blob = await canvasToBlob(canvas, THUMB_JPEG_QUALITY);
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+export async function processVideoForSend(file: File): Promise<ProcessedVideo> {
+  if (file.size > MAX_VIDEO_BYTES) {
+    throw new VideoTooLargeError();
+  }
+
+  if (!file.type.startsWith("video/")) {
+    throw new VideoUnsupportedError();
+  }
+
+  const url = URL.createObjectURL(file);
+  const video = document.createElement("video");
+  video.preload = "metadata";
+  video.muted = true;
+  video.playsInline = true;
+  video.src = url;
+
+  try {
+    const { w, h, durationMs } = await new Promise<{
+      w: number;
+      h: number;
+      durationMs: number;
+    }>((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new VideoUnsupportedError()),
+        VIDEO_METADATA_TIMEOUT_MS,
+      );
+      video.onloadedmetadata = () => {
+        clearTimeout(timeout);
+        if (
+          !video.videoWidth ||
+          !video.videoHeight ||
+          !Number.isFinite(video.duration) ||
+          video.duration <= 0
+        ) {
+          reject(new VideoUnsupportedError());
+          return;
+        }
+        resolve({
+          w: video.videoWidth,
+          h: video.videoHeight,
+          durationMs: Math.round(video.duration * 1000),
+        });
+      };
+      video.onerror = () => {
+        clearTimeout(timeout);
+        reject(new VideoUnsupportedError());
+      };
+    });
+
+    let thumbBytes: Uint8Array | null = null;
+    try {
+      thumbBytes = await captureVideoThumbnail(video, w, h);
+    } catch {
+      // Some codecs in WKWebView cannot render a frame — send without thumbnail.
+    }
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    return {
+      bytes,
+      mime: file.type || "video/mp4",
+      w,
+      h,
+      durationMs,
+      thumbBytes,
+    };
+  } finally {
+    video.removeAttribute("src");
+    video.load();
+    URL.revokeObjectURL(url);
+  }
+}
