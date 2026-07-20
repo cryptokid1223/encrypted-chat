@@ -93,6 +93,56 @@ export function SettingsRow({
   );
 }
 
+export function SettingsToggleRow({
+  label,
+  checked,
+  onChange,
+  disabled = false,
+  isLast = false,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  disabled?: boolean;
+  isLast?: boolean;
+}) {
+  return (
+    <label
+      className={`flex w-full min-h-12 cursor-pointer items-center gap-[var(--sp-3)] px-[var(--sp-4)] ${
+        disabled ? "opacity-40" : ""
+      }`}
+    >
+      <div
+        className={`flex min-w-0 flex-1 items-center justify-between gap-[var(--sp-3)] self-stretch py-[var(--sp-3)] ${
+          isLast ? "" : "border-b border-[var(--divider)]"
+        }`}
+      >
+        <span className="text-[length:var(--text-body)] text-[var(--text-primary)]">
+          {label}
+        </span>
+        <span className="relative inline-flex h-7 w-12 shrink-0 items-center">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={checked}
+            disabled={disabled}
+            onChange={(e) => onChange(e.target.checked)}
+            className="peer sr-only"
+          />
+          <span
+            aria-hidden
+            className="absolute inset-0 rounded-full bg-[var(--divider)] transition-colors duration-150 peer-checked:bg-[var(--accent)] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--accent)]"
+          />
+          <span
+            aria-hidden
+            className="absolute left-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform duration-150 peer-checked:translate-x-5"
+          />
+        </span>
+      </div>
+    </label>
+  );
+}
+
 export function SettingsConfirmDialog({
   title,
   description,

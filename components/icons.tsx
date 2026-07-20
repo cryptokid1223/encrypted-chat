@@ -214,6 +214,31 @@ export function PeopleIcon(props: IconProps) {
   );
 }
 
+export function SparkleIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
+      <path
+        d="M12 3.5 13.4 9.1 19 10.5 13.4 11.9 12 17.5 10.6 11.9 5 10.5 10.6 9.1 12 3.5Z"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M18.5 3.5 19.1 5.4 21 6 19.1 6.6 18.5 8.5 17.9 6.6 16 6 17.9 5.4 18.5 3.5Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6.5 15 7 16.6 8.5 17.1 7 17.6 6.5 19.2 6 17.6 4.5 17.1 6 16.6 6.5 15Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function KeyIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>

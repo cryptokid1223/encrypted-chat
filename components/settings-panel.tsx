@@ -18,7 +18,12 @@ import {
   SettingsConfirmDialog,
   SettingsRow,
   SettingsSection,
+  SettingsToggleRow,
 } from "@/components/settings-ui";
+import {
+  getAiAssistEnabled,
+  setAiAssistEnabled,
+} from "@/components/ai-assist-prefs";
 import { useProfile } from "@/components/profile-context";
 import { Avatar } from "@/lib/avatars";
 import { invalidatePrivateKeyCache, loadPrivateKey } from "@/lib/keystore";
@@ -62,6 +67,11 @@ export function SettingsPanel() {
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
+  const [aiAssistEnabled, setAiAssistEnabledState] = useState(true);
+
+  useEffect(() => {
+    setAiAssistEnabledState(getAiAssistEnabled());
+  }, []);
 
   const navigateBack = useCallback(() => {
     router.push(returnTo);
@@ -219,6 +229,23 @@ export function SettingsPanel() {
               isLast
             />
           </SettingsSection>
+
+          <SettingsSection title="Message assistant">
+            <SettingsToggleRow
+              label="Message assistant"
+              checked={aiAssistEnabled}
+              onChange={(next) => {
+                setAiAssistEnabled(next);
+                setAiAssistEnabledState(next);
+                window.dispatchEvent(new Event("ai-assist-pref-changed"));
+              }}
+              isLast
+            />
+          </SettingsSection>
+          <p className="mt-[var(--sp-2)] px-[var(--sp-4)] text-[length:var(--text-caption)] leading-[1.4] text-[var(--text-secondary)]">
+            Rewrites drafts you choose using OpenAI. Sent messages stay end-to-end
+            encrypted.
+          </p>
 
           <SettingsSection title="About">
             <SettingsRow

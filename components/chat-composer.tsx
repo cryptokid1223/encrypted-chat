@@ -1,7 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { ArrowUpIcon, CloseIcon, PlusIcon, MicIcon } from "@/components/icons";
+import {
+  getAiAssistConsented,
+  getAiAssistEnabled,
+  setAiAssistConsented,
+} from "@/components/ai-assist-prefs";
+import { ArrowUpIcon, CloseIcon, PlusIcon, MicIcon, SparkleIcon } from "@/components/icons";
+import { RewriteToneSheet } from "@/components/rewrite-tone-sheet";
+import { SettingsConfirmDialog } from "@/components/settings-ui";
 import { formatDurationMs } from "@/lib/messageContent";
 import {
   MAX_RECORD_MS,
@@ -16,6 +23,8 @@ export type VoiceRecordingPayload = {
   mime: string;
   durationMs: number;
 };
+
+const UNDO_MS = 8000;
 
 export function ChatComposer({
   onSend,
@@ -42,8 +51,14 @@ export function ChatComposer({
   const [showMaxLabel, setShowMaxLabel] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
 
+  const [assistEnabled, setAssistEnabled] = useState(true);
+  const [consentOpen, setConsentOpen] = useState(false);
+  const [toneSheetOpen, setToneSheetOpen] = useState(false);
+  const [undoOriginal, setUndoOriginal] = useState<string | null>(null);
+
   const inputId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -51,9 +66,66 @@ export function ChatComposer({
   const startTimeRef = useRef(0);
   const maxTriggeredRef = useRef(false);
   const finishingRef = useRef(false);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftRef = useRef(draft);
+
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
+  useEffect(() => {
+    setAssistEnabled(getAiAssistEnabled());
+
+    function onStorage(e: StorageEvent) {
+      if (e.key === "ai_assist_enabled") {
+        setAssistEnabled(getAiAssistEnabled());
+      }
+    }
+    function onAssistPref() {
+      setAssistEnabled(getAiAssistEnabled());
+    }
+
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("ai-assist-pref-changed", onAssistPref);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("ai-assist-pref-changed", onAssistPref);
+    };
+  }, []);
+
+  const clearUndo = useCallback(() => {
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = null;
+    }
+    setUndoOriginal(null);
+  }, []);
+
+  const showUndo = useCallback(
+    (original: string) => {
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+      setUndoOriginal(original);
+      undoTimerRef.current = setTimeout(() => {
+        setUndoOriginal(null);
+        undoTimerRef.current = null;
+      }, UNDO_MS);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    };
+  }, []);
 
   const canSend = useMemo(() => draft.trim().length > 0, [draft]);
   const inlineError = attachError ?? permissionError;
+  const showAssistButton =
+    assistEnabled &&
+    draft.length >= 1 &&
+    !recording &&
+    !attachDisabled;
 
   const finishRecording = useCallback(
     async (send: boolean) => {
@@ -174,6 +246,46 @@ export function ChatComposer({
     };
   }, []);
 
+  function focusInputEnd() {
+    const el = textInputRef.current;
+    if (!el) return;
+    el.focus();
+    const len = el.value.length;
+    el.setSelectionRange(len, len);
+  }
+
+  function handleAssistTap() {
+    if (!getAiAssistConsented()) {
+      setConsentOpen(true);
+      return;
+    }
+    setToneSheetOpen(true);
+  }
+
+  function handleConsentContinue() {
+    setAiAssistConsented(true);
+    setConsentOpen(false);
+    setToneSheetOpen(true);
+  }
+
+  function handleRewritten(rewritten: string, originalSent: string) {
+    if (draftRef.current !== originalSent) {
+      setToneSheetOpen(false);
+      return;
+    }
+    setDraft(rewritten);
+    setToneSheetOpen(false);
+    showUndo(originalSent);
+    requestAnimationFrame(() => focusInputEnd());
+  }
+
+  function handleUndo() {
+    if (undoOriginal === null) return;
+    setDraft(undoOriginal);
+    clearUndo();
+    requestAnimationFrame(() => focusInputEnd());
+  }
+
   return (
     <form
       onSubmit={(e) => {
@@ -181,6 +293,7 @@ export function ChatComposer({
         if (disabled) return;
         const text = draft.trim();
         if (!text) return;
+        clearUndo();
         setDraft("");
         onSend(text);
       }}
@@ -194,6 +307,17 @@ export function ChatComposer({
           >
             {inlineError}
           </p>
+        ) : null}
+        {undoOriginal !== null && !recording ? (
+          <div className="mb-[var(--sp-1)] flex justify-center">
+            <button
+              type="button"
+              onClick={handleUndo}
+              className="pressable flex min-h-11 items-center rounded-full bg-[var(--surface-elevated)] px-[var(--sp-4)] text-[length:var(--text-caption)] font-medium text-[var(--text-primary)]"
+            >
+              Undo rewrite
+            </button>
+          </div>
         ) : null}
         {recording ? (
           <div className="flex items-center gap-[var(--sp-2)]">
@@ -252,9 +376,23 @@ export function ChatComposer({
             >
               <PlusIcon className="h-9 w-9" strokeWidth={1.75} />
             </button>
+            {showAssistButton ? (
+              <button
+                type="button"
+                aria-label="Message assistant"
+                onClick={handleAssistTap}
+                className="pressable flex h-11 w-11 shrink-0 items-center justify-center text-[var(--text-secondary)]"
+              >
+                <SparkleIcon className="h-5 w-5" />
+              </button>
+            ) : null}
             <input
+              ref={textInputRef}
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => {
+                clearUndo();
+                setDraft(e.target.value);
+              }}
               placeholder="Message"
               autoComplete="off"
               className="min-h-10 flex-1 rounded-[var(--radius-input)] border border-[var(--divider)] bg-[var(--surface)] px-[var(--sp-4)] py-[var(--sp-2)] text-[length:var(--text-body)] leading-[1.35] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none"
@@ -286,6 +424,25 @@ export function ChatComposer({
           </div>
         )}
       </div>
+
+      {consentOpen ? (
+        <SettingsConfirmDialog
+          title="Use Message assistant?"
+          description="This sends the draft you're editing to OpenAI to rewrite it. Your sent messages stay end-to-end encrypted — only drafts you choose to adjust are shared."
+          confirmLabel="Continue"
+          cancelLabel="Not now"
+          onConfirm={handleConsentContinue}
+          onCancel={() => setConsentOpen(false)}
+        />
+      ) : null}
+
+      {toneSheetOpen ? (
+        <RewriteToneSheet
+          draft={draft}
+          onRewritten={handleRewritten}
+          onClose={() => setToneSheetOpen(false)}
+        />
+      ) : null}
     </form>
   );
 }
