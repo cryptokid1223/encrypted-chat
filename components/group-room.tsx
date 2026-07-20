@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChatComposer, type VoiceRecordingPayload } from "@/components/chat-composer";
 import { GroupAvatar } from "@/components/group-avatar";
 import { GroupInfo } from "@/components/group-info";
@@ -12,6 +12,7 @@ import { MessageBubble } from "@/components/message-bubble";
 import { PhotoViewerHostProvider } from "@/components/photo-viewer-host";
 import { useNicknames } from "@/components/nicknames-context";
 import { useVisualViewport } from "@/hooks/useVisualViewport";
+import { useConversationAnchoring } from "@/hooks/useConversationAnchoring";
 import { uploadEncryptedAttachment } from "@/lib/attachmentStorage";
 import { isSameCalendarDay } from "@/lib/chat";
 import { encryptMessage } from "@/lib/crypto";
@@ -117,7 +118,6 @@ export function GroupRoom() {
   const [attachError, setAttachError] = useState<string | null>(null);
 
   const messagesRef = useRef<DisplayMessage[]>([]);
-  const scrollerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const photoViewerHostRef = useRef<HTMLDivElement>(null);
   const seenRowIdsRef = useRef(new Set<string>());
@@ -130,6 +130,7 @@ export function GroupRoom() {
     new Map(),
   );
   const initialMessageIdsRef = useRef<Set<string> | null>(null);
+  const [loadedGroupId, setLoadedGroupId] = useState<string | null>(null);
   const pendingFileRef = useRef<Map<string, File>>(new Map());
   const pendingAudioRef = useRef<
     Map<string, { bytes: Uint8Array; mime: string; durationMs: number }>
@@ -139,10 +140,36 @@ export function GroupRoom() {
     messagesRef.current = messages;
   }, [messages]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    setStatus("loading");
+    setMessages([]);
+    setError(null);
+    setName("");
+    setAvatarId(null);
+    setMemberCount(0);
+    setMembers([]);
+    setMyJoinedAt(null);
+    setGroupCreatedAt(null);
+    setGroupInfoOpen(false);
+    setLoadedGroupId(null);
     initialMessageIdsRef.current = null;
     pendingFileRef.current.clear();
     pendingAudioRef.current.clear();
+  }, [groupId]);
+
+  const {
+    scrollerRef,
+    contentRef,
+    paneStyle,
+    isAnchoringRef,
+    scrollToBottom,
+    isNearBottom,
+  } = useConversationAnchoring(
+    groupId,
+    status === "ready" && loadedGroupId === groupId,
+  );
+
+  useEffect(() => {
     return () => {
       stopVoicePlayback();
       for (const m of messagesRef.current) {
@@ -159,23 +186,16 @@ export function GroupRoom() {
     }
   }, [status, messages]);
 
-  const scrollToBottom = useCallback(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, []);
-
-  const isNearBottom = useCallback(() => {
-    const el = scrollerRef.current;
-    if (!el) return true;
-    const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
-    return remaining < 180;
-  }, []);
-
   useEffect(() => {
+    if (isAnchoringRef.current) return;
     if (!isNearBottom()) return;
     scrollToBottom();
-  }, [messages, isNearBottom, scrollToBottom]);
+  }, [messages, isNearBottom, scrollToBottom, isAnchoringRef]);
+
+  const scrollOnViewport = useCallback(() => {
+    if (isAnchoringRef.current) return;
+    scrollToBottom();
+  }, [scrollToBottom, isAnchoringRef]);
 
   const appendDecryptedMessage = useCallback((display: DisplayMessage) => {
     if (seenMessageUuidsRef.current.has(display.id)) {
@@ -228,7 +248,7 @@ export function GroupRoom() {
     setMembersRevision((v) => v + 1);
   }, [groupId]);
 
-  useVisualViewport(scrollToBottom);
+  useVisualViewport(scrollOnViewport);
 
   useEffect(() => {
     let cancelled = false;
@@ -354,6 +374,7 @@ export function GroupRoom() {
             decryptFailed: m.decryptFailed,
           })),
         );
+        setLoadedGroupId(groupId);
         setStatus("ready");
 
         channel = supabase
@@ -1094,7 +1115,11 @@ export function GroupRoom() {
           className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--bg)]"
           style={{ WebkitOverflowScrolling: "touch", overscrollBehavior: "none" }}
         >
-          <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-[var(--sp-3)] pb-[var(--sp-2)] pt-[var(--sp-2)]">
+          <div
+            ref={contentRef}
+            style={paneStyle}
+            className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-[var(--sp-3)] pb-[var(--sp-2)] pt-[var(--sp-2)]"
+          >
             {messages.length === 0 ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-[var(--sp-2)] text-center">
                 <GroupAvatar avatarId={avatarId} size={48} />

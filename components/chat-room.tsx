@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronLeftIcon, LockIcon } from "@/components/icons";
 import { ContactDetail } from "@/components/contact-detail";
 import { useKeyGate } from "@/components/key-gate";
@@ -26,6 +26,7 @@ import { MessageBubble } from "@/components/message-bubble";
 import { ChatComposer, type VoiceRecordingPayload } from "@/components/chat-composer";
 import { PhotoViewerHostProvider } from "@/components/photo-viewer-host";
 import { useVisualViewport } from "@/hooks/useVisualViewport";
+import { useConversationAnchoring } from "@/hooks/useConversationAnchoring";
 import type {
   DecryptedMessage,
   EncryptedMessageRow,
@@ -112,7 +113,6 @@ export function ChatRoom() {
     Map<string, { bytes: Uint8Array; mime: string; durationMs: number }>
   >(new Map());
 
-  const scrollerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const photoViewerHostRef = useRef<HTMLDivElement>(null);
   const seenIdsRef = useRef(new Set<string>());
@@ -125,11 +125,36 @@ export function ChatRoom() {
     Map<string, { tempId: string; body: string }>
   >(new Map());
   const initialMessageIdsRef = useRef<Set<string> | null>(null);
+  const [loadedConversationId, setLoadedConversationId] = useState<
+    string | null
+  >(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    setStatus("loading");
+    setMessages([]);
+    setError(null);
+    setOtherUsername("");
+    setOtherUserId(null);
+    setOtherAvatarId(null);
+    setLoadedConversationId(null);
     initialMessageIdsRef.current = null;
     pendingFileRef.current.clear();
     pendingAudioRef.current.clear();
+  }, [conversationId]);
+
+  const {
+    scrollerRef,
+    contentRef,
+    paneStyle,
+    isAnchoringRef,
+    scrollToBottom,
+    isNearBottom,
+  } = useConversationAnchoring(
+    conversationId,
+    status === "ready" && loadedConversationId === conversationId,
+  );
+
+  useEffect(() => {
     return () => {
       stopVoicePlayback();
       for (const m of messagesRef.current) {
@@ -146,25 +171,18 @@ export function ChatRoom() {
     }
   }, [status, messages]);
 
-  const scrollToBottom = useCallback(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, []);
-
-  const isNearBottom = useCallback(() => {
-    const el = scrollerRef.current;
-    if (!el) return true;
-    const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
-    return remaining < 180;
-  }, []);
-
   useEffect(() => {
+    if (isAnchoringRef.current) return;
     if (!isNearBottom()) return;
     scrollToBottom();
-  }, [messages, isNearBottom, scrollToBottom]);
+  }, [messages, isNearBottom, scrollToBottom, isAnchoringRef]);
 
-  useVisualViewport(scrollToBottom);
+  const scrollOnViewport = useCallback(() => {
+    if (isAnchoringRef.current) return;
+    scrollToBottom();
+  }, [scrollToBottom, isAnchoringRef]);
+
+  useVisualViewport(scrollOnViewport);
 
   useEffect(() => {
     let cancelled = false;
@@ -282,6 +300,7 @@ export function ChatRoom() {
         setOtherUserId(otherId as string);
         setOtherAvatarId((otherProfile.avatar_id as string | null) ?? null);
         setMessages(decrypted);
+        setLoadedConversationId(conversationId);
         setStatus("ready");
 
         channel = supabase
@@ -905,7 +924,11 @@ export function ChatRoom() {
         className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--bg)]"
         style={{ WebkitOverflowScrolling: "touch", overscrollBehavior: "none" }}
       >
-        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-[var(--sp-3)] pb-[var(--sp-2)] pt-[var(--sp-2)]">
+        <div
+          ref={contentRef}
+          style={paneStyle}
+          className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-[var(--sp-3)] pb-[var(--sp-2)] pt-[var(--sp-2)]"
+        >
           {messages.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-[var(--sp-2)] text-center">
               <Avatar avatarId={otherAvatarId} size={48} />
