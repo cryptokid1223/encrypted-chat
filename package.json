@@ -16,10 +16,13 @@
     "@capacitor/keyboard": "^8.0.5",
     "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.110.7",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.38.0",
     "capacitor-secure-storage-plugin": "^0.13.0",
     "html5-qrcode": "^2.3.8",
     "libsodium-wrappers-sumo": "^0.8.4",
     "next": "16.2.10",
+    "openai": "^6.48.0",
     "qrcode": "^1.5.4",
     "react": "19.2.4",
     "react-dom": "19.2.4"
