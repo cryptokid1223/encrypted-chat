@@ -53,6 +53,25 @@ function isOptimisticPending(id: string): boolean {
   return id.startsWith("local:");
 }
 
+function ChatHistorySkeleton() {
+  return (
+    <div
+      className="flex flex-1 flex-col justify-end gap-[var(--sp-3)] px-[var(--sp-3)] pb-[var(--sp-4)]"
+      aria-hidden
+    >
+      <div className="flex justify-start">
+        <div className="skeleton-shimmer h-12 w-[62%] max-w-[240px] rounded-[18px] rounded-bl-[6px]" />
+      </div>
+      <div className="flex justify-end">
+        <div className="skeleton-shimmer h-10 w-[48%] max-w-[200px] rounded-[18px] rounded-br-[6px]" />
+      </div>
+      <div className="flex justify-start">
+        <div className="skeleton-shimmer h-14 w-[55%] max-w-[220px] rounded-[18px] rounded-bl-[6px]" />
+      </div>
+    </div>
+  );
+}
+
 export function ChatRoom() {
   const params = useParams<{ conversationId: string }>();
   const conversationId = params.conversationId;
@@ -86,6 +105,17 @@ export function ChatRoom() {
   const pendingByCipherRef = useRef<
     Map<string, { tempId: string; body: string }>
   >(new Map());
+  const initialMessageIdsRef = useRef<Set<string> | null>(null);
+
+  useEffect(() => {
+    initialMessageIdsRef.current = null;
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (status === "ready" && initialMessageIdsRef.current === null) {
+      initialMessageIdsRef.current = new Set(messages.map((m) => m.id));
+    }
+  }, [status, messages]);
 
   const scrollToBottom = useCallback(() => {
     const el = scrollerRef.current;
@@ -416,8 +446,19 @@ export function ChatRoom() {
 
   if (status === "loading") {
     return (
-      <div className="flex flex-1 items-center justify-center p-6 text-[13px] text-[#6E6963]">
-        Loading chat…
+      <div className="screen-enter flex h-app min-h-0 w-full min-w-0 flex-col overflow-x-hidden bg-[var(--bg)] md:h-full md:flex-1">
+        <header className="safe-pt shrink-0 border-b border-[var(--divider)] bg-[var(--bg)]">
+          <div className="flex h-[52px] items-center px-[var(--sp-3)]">
+            <Link
+              href="/chats"
+              aria-label="Back to chats"
+              className="pressable flex h-11 w-11 shrink-0 items-center justify-center text-[var(--text-secondary)] md:hidden"
+            >
+              <ChevronLeftIcon className="h-5 w-5" />
+            </Link>
+          </div>
+        </header>
+        <ChatHistorySkeleton />
       </div>
     );
   }
@@ -430,7 +471,7 @@ export function ChatRoom() {
         </p>
         <Link
           href="/chats"
-          className="text-[13px] font-medium text-[#EA580C] transition-colors duration-150 ease-in-out hover:text-[#C2410C]"
+          className="pressable text-[length:var(--text-secondary-size)] font-medium text-[var(--accent)]"
         >
           Back to chats
         </Link>
@@ -447,13 +488,13 @@ export function ChatRoom() {
   const otherHasNickname = hasNickname(otherIdentity);
 
   return (
-    <div className="flex h-app min-h-0 w-full flex-col bg-[var(--bg)] md:h-full md:flex-1">
+    <div className="screen-enter flex h-app min-h-0 w-full min-w-0 flex-col overflow-x-hidden bg-[var(--bg)] md:h-full md:flex-1">
       <header className="safe-pt shrink-0 border-b border-[var(--divider)] bg-[var(--bg)]">
         <div className="flex h-[52px] items-center gap-[var(--sp-2)] px-[var(--sp-3)]">
           <Link
             href="/chats"
             aria-label="Back to chats"
-            className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--text-secondary)] transition-opacity duration-150 ease-in-out active:opacity-70 md:hidden"
+            className="pressable flex h-11 w-11 shrink-0 items-center justify-center text-[var(--text-secondary)] md:hidden"
           >
             <ChevronLeftIcon className="h-5 w-5" />
           </Link>
@@ -461,7 +502,7 @@ export function ChatRoom() {
             type="button"
             onClick={() => setContactDetailOpen(true)}
             disabled={!otherUserId}
-            className="flex min-h-11 min-w-0 flex-1 items-center gap-[var(--sp-2)] text-left transition-opacity duration-150 ease-in-out active:opacity-70 disabled:opacity-60"
+            className="row-press flex min-h-11 min-w-0 flex-1 items-center gap-[var(--sp-2)] rounded-[var(--radius-input)] text-left disabled:opacity-60"
           >
             <Avatar avatarId={otherAvatarId} size={32} />
             <div className="min-w-0 flex-1">
@@ -539,6 +580,10 @@ export function ChatRoom() {
                       isFirstInGroup={isFirstInGroup}
                       isLastInGroup={isLastInGroup}
                       isPending={isOptimisticPending(m.id)}
+                      animateIn={
+                        initialMessageIdsRef.current !== null &&
+                        !initialMessageIdsRef.current.has(m.id)
+                      }
                       failed={m.failed}
                       onRetry={handleRetry}
                     />

@@ -47,10 +47,10 @@ function ListSkeleton() {
           key={i}
           className="flex min-h-[64px] items-center gap-[var(--sp-3)] px-[var(--sp-4)] py-[var(--sp-3)]"
         >
-          <div className="h-12 w-12 shrink-0 rounded-full bg-[var(--surface)]" />
+          <div className="h-12 w-12 shrink-0 rounded-full skeleton-shimmer" />
           <div className="min-w-0 flex-1 space-y-[var(--sp-2)]">
-            <div className="h-4 w-[55%] rounded bg-[var(--surface)]" />
-            <div className="h-3 w-[75%] rounded bg-[var(--surface)]" />
+            <div className="h-4 w-[55%] rounded skeleton-shimmer" />
+            <div className="h-3 w-[75%] rounded skeleton-shimmer" />
           </div>
         </li>
       ))}
@@ -80,7 +80,7 @@ const ConversationRowItem = memo(function ConversationRowItem({
   return (
     <Link
       href={`/chats/${id}`}
-      className={`flex min-h-[64px] items-center gap-[var(--sp-3)] px-[var(--sp-4)] transition-colors duration-150 ease-in-out active:bg-[var(--surface)] ${
+      className={`row-press flex min-h-[64px] min-w-0 items-center gap-[var(--sp-3)] px-[var(--sp-4)] ${
         active ? "bg-[var(--surface)]" : ""
       }`}
     >
@@ -406,7 +406,7 @@ export function ChatList({
   const showLoading = loadingList || !nicknamesLoaded;
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col bg-[var(--bg)]">
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-[var(--bg)] screen-enter">
       <header
         className={`safe-pt shrink-0 bg-[var(--bg)] transition-[border-color] duration-150 ${
           listScrolled ? "border-b border-[var(--divider)]" : "border-b border-transparent"
@@ -421,14 +421,14 @@ export function ChatList({
               type="button"
               onClick={() => setComposeOpen(true)}
               aria-label="New message"
-              className="flex h-11 w-11 items-center justify-center text-[var(--text-primary)] transition-opacity duration-150 ease-in-out active:opacity-70"
+              className="pressable flex h-11 w-11 items-center justify-center text-[var(--text-primary)]"
             >
               <PencilIcon className="h-[22px] w-[22px]" />
             </button>
             <Link
               href="/settings"
               aria-label="Profile and settings"
-              className="flex h-11 w-11 items-center justify-center active:opacity-70"
+              className="pressable flex h-11 w-11 items-center justify-center"
             >
               <Avatar avatarId={avatarId} size={32} />
             </Link>
@@ -492,7 +492,7 @@ export function ChatList({
                 <button
                   type="button"
                   onClick={() => setComposeOpen(true)}
-                  className="mt-[var(--sp-4)] flex h-11 items-center justify-center rounded-[var(--radius-input)] bg-[var(--accent)] px-[var(--sp-6)] text-[length:var(--text-secondary-size)] font-medium text-white transition-colors duration-150 ease-in-out active:bg-[var(--accent-pressed)]"
+                  className="mt-[var(--sp-4)] pressable flex h-11 items-center justify-center rounded-[var(--radius-input)] bg-[var(--accent)] px-[var(--sp-6)] text-[length:var(--text-secondary-size)] font-medium text-white active:bg-[var(--accent-pressed)]"
                 >
                   New message
                 </button>

@@ -91,7 +91,7 @@ export function LoginForm() {
       </div>
 
       <div className="mt-[var(--sp-6)]">
-        <AuthPrimaryButton disabled={busy}>
+        <AuthPrimaryButton disabled={busy} loading={busy}>
           {busy ? "Logging in…" : "Log in"}
         </AuthPrimaryButton>
         {generalError ? (

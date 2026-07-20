@@ -49,13 +49,13 @@ export function SettingsRow({
       type={onClick ? "button" : undefined}
       onClick={onClick}
       disabled={disabled}
-      className={`flex w-full min-h-12 items-center text-left transition-colors duration-150 ease-in-out ${
+      className={`flex w-full min-h-12 items-center text-left ${
         hasIcon
           ? "gap-[var(--sp-3)] pl-[var(--sp-4)] pr-[var(--sp-4)]"
           : "px-[var(--sp-4)]"
       } ${
         onClick
-          ? "active:bg-[var(--surface-elevated)] disabled:opacity-40"
+          ? "row-press-elevated disabled:opacity-40"
           : ""
       }`}
     >
@@ -117,7 +117,7 @@ export function SettingsConfirmDialog({
       <button
         type="button"
         aria-label="Close"
-        className="absolute inset-0 bg-black/60"
+        className="sheet-backdrop-enter absolute inset-0 bg-black/60"
         onClick={onCancel}
       />
       <div
@@ -125,7 +125,7 @@ export function SettingsConfirmDialog({
         aria-modal="true"
         aria-labelledby="settings-dialog-title"
         aria-describedby="settings-dialog-desc"
-        className="relative z-10 w-full max-w-sm rounded-[var(--radius-card)] bg-[var(--surface-elevated)] p-[var(--sp-5)]"
+        className="screen-enter relative z-10 w-full max-w-sm rounded-[var(--radius-card)] bg-[var(--surface-elevated)] p-[var(--sp-5)]"
       >
         <p
           id="settings-dialog-title"
@@ -144,10 +144,10 @@ export function SettingsConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={confirming}
-            className={`flex min-h-11 w-full items-center justify-center rounded-[var(--radius-input)] text-[length:var(--text-body)] font-semibold transition-opacity duration-150 ease-in-out active:opacity-70 disabled:opacity-40 ${
+            className={`flex min-h-11 w-full items-center justify-center rounded-[var(--radius-input)] text-[length:var(--text-body)] font-semibold transition-opacity duration-150 ease-in-out disabled:opacity-40 ${
               destructive
-                ? "text-[var(--destructive)]"
-                : "bg-[var(--accent)] text-white active:bg-[var(--accent-pressed)]"
+                ? "pressable text-[var(--destructive)]"
+                : "pressable bg-[var(--accent)] text-white active:bg-[var(--accent-pressed)]"
             }`}
           >
             {confirmLabel}
@@ -156,7 +156,7 @@ export function SettingsConfirmDialog({
             type="button"
             onClick={onCancel}
             disabled={confirming}
-            className="flex min-h-11 w-full items-center justify-center rounded-[var(--radius-input)] text-[length:var(--text-body)] font-medium text-[var(--text-primary)] transition-opacity duration-150 ease-in-out active:opacity-70 disabled:opacity-40"
+            className="pressable flex min-h-11 w-full items-center justify-center rounded-[var(--radius-input)] text-[length:var(--text-body)] font-medium text-[var(--text-primary)] disabled:opacity-40"
           >
             {cancelLabel}
           </button>

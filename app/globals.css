@@ -127,7 +127,132 @@ input,
 label {
   transition-property: color, background-color, border-color, opacity, transform;
   transition-duration: 150ms;
-  transition-timing-function: ease;
+  transition-timing-function: ease-out;
+}
+
+/* ── Press feedback ── */
+.pressable {
+  transition:
+    transform 150ms ease-out,
+    opacity 150ms ease-out,
+    background-color 150ms ease-out,
+    color 150ms ease-out;
+}
+
+.pressable:active:not(:disabled) {
+  transform: scale(0.97);
+  opacity: 0.85;
+}
+
+.row-press {
+  transition: background-color 150ms ease-out;
+}
+
+.row-press:active {
+  background-color: var(--surface);
+}
+
+.row-press-elevated {
+  transition: background-color 150ms ease-out;
+}
+
+.row-press-elevated:active:not(:disabled) {
+  background-color: var(--surface-elevated);
+}
+
+/* ── Motion ── */
+@keyframes screen-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes backdrop-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sheet-enter {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes msg-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.screen-enter {
+  animation: screen-enter 150ms ease-out both;
+}
+
+.sheet-backdrop-enter {
+  animation: backdrop-enter 200ms ease-out both;
+}
+
+.sheet-panel-enter {
+  animation: sheet-enter 200ms ease-out both;
+}
+
+.msg-enter {
+  animation: msg-enter 150ms ease-out both;
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--surface) 0%,
+    var(--surface-elevated) 45%,
+    var(--surface) 90%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pressable:active:not(:disabled) {
+    transform: none;
+  }
+
+  .screen-enter,
+  .sheet-backdrop-enter,
+  .sheet-panel-enter,
+  .msg-enter {
+    animation: none;
+  }
+
+  .skeleton-shimmer {
+    animation: none;
+    background: var(--surface);
+  }
 }
 
 .safe-pt {
@@ -186,14 +311,4 @@ button,
 label,
 [role="button"] {
   -webkit-tap-highlight-color: transparent;
-}
-
-/* Subtle active press feedback for tappable elements. */
-@media (hover: none) {
-  a:active,
-  button:active:not(:disabled),
-  [role="button"]:active {
-    opacity: 0.7;
-    transition-duration: 0ms;
-  }
 }

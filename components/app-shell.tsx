@@ -28,7 +28,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     : null;
 
   return (
-    <div className="safe-px flex h-app w-full overflow-hidden bg-[#0F0E0D]">
+    <div className="safe-px flex h-app w-full min-w-0 overflow-hidden overflow-x-hidden bg-[#0F0E0D]">
       <div className="flex h-full min-h-0 w-full max-w-[1400px]">
         <aside
           className={`relative flex h-full min-h-0 w-full flex-col bg-[var(--bg)] md:w-[320px] md:shrink-0 md:border-r md:border-[var(--divider)] ${
@@ -39,7 +39,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </aside>
 
         <main
-          className={`flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#0F0E0D] ${
+          className={`screen-enter flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden overflow-x-hidden bg-[#0F0E0D] ${
             isChatList && !isSettings ? "hidden md:flex" : "flex"
           }`}
         >

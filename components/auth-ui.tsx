@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { EyeIcon, EyeOffIcon } from "@/components/icons";
+import { InlineSpinner } from "@/components/inline-spinner";
 import { Logo } from "@/components/logo";
 
 export function scrollAuthFieldIntoView(e: React.FocusEvent<HTMLElement>) {
@@ -114,7 +115,7 @@ export function AuthTextField({
             type="button"
             onClick={() => setVisible((v) => !v)}
             aria-label={visible ? "Hide password" : "Show password"}
-            className="absolute right-0 top-0 flex h-12 w-11 items-center justify-center text-[var(--text-secondary)] transition-opacity duration-150 ease-in-out active:opacity-70"
+            className="pressable absolute right-0 top-0 flex h-12 w-11 items-center justify-center text-[var(--text-secondary)]"
           >
             {visible ? (
               <EyeOffIcon className="h-5 w-5" />
@@ -144,21 +145,24 @@ export function AuthTextField({
 export function AuthPrimaryButton({
   children,
   disabled,
+  loading = false,
   type = "submit",
   onClick,
 }: {
   children: React.ReactNode;
   disabled?: boolean;
+  loading?: boolean;
   type?: "submit" | "button";
   onClick?: () => void;
 }) {
   return (
     <button
       type={type}
-      disabled={disabled}
+      disabled={disabled || loading}
       onClick={onClick}
-      className="flex h-[50px] w-full items-center justify-center rounded-[var(--radius-input)] bg-[var(--accent)] px-[var(--sp-4)] text-[length:var(--text-body)] font-semibold text-white transition-colors duration-150 ease-in-out active:bg-[var(--accent-pressed)] disabled:cursor-not-allowed disabled:opacity-40"
+      className="pressable flex h-[50px] w-full items-center justify-center gap-[var(--sp-2)] rounded-[var(--radius-input)] bg-[var(--accent)] px-[var(--sp-4)] text-[length:var(--text-body)] font-semibold text-white active:bg-[var(--accent-pressed)] disabled:cursor-not-allowed disabled:opacity-40"
     >
+      {loading ? <InlineSpinner className="h-4 w-4" /> : null}
       {children}
     </button>
   );
@@ -178,7 +182,7 @@ export function AuthFooterLink({
       {text}{" "}
       <Link
         href={href}
-        className="font-medium text-[var(--accent)] transition-opacity duration-150 ease-in-out active:opacity-70"
+        className="pressable font-medium text-[var(--accent)]"
       >
         {linkText}
       </Link>

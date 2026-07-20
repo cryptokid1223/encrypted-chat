@@ -279,7 +279,7 @@ export function SignupForm() {
             setStep(1);
           }}
           aria-label="Back to account details"
-          className="absolute left-0 top-0 flex h-11 w-11 items-center justify-center text-[var(--text-secondary)] transition-opacity duration-150 ease-in-out active:opacity-70"
+          className="pressable absolute left-0 top-0 flex h-11 w-11 items-center justify-center text-[var(--text-secondary)]"
         >
           <ChevronLeftIcon className="h-5 w-5" />
         </button>
@@ -303,7 +303,7 @@ export function SignupForm() {
               aria-selected={selected}
               title={avatar.name}
               onClick={() => setAvatarId(avatar.id)}
-              className={`relative flex items-center justify-center rounded-full p-0.5 transition-all duration-150 ease-in-out active:scale-95 active:opacity-80 ${
+              className={`pressable relative flex items-center justify-center rounded-full p-0.5 ${
                 selected ? "ring-2 ring-[var(--accent)]" : ""
               }`}
             >
@@ -354,7 +354,7 @@ export function SignupForm() {
       ) : null}
 
       <div className="mt-[var(--sp-6)]">
-        <AuthPrimaryButton disabled={!canSubmit}>
+        <AuthPrimaryButton disabled={!canSubmit} loading={busy}>
           {busy ? "Creating account…" : "Create account"}
         </AuthPrimaryButton>
       </div>

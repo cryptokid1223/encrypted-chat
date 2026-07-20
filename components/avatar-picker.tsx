@@ -37,7 +37,7 @@ export function AvatarPicker({
             aria-selected={selected}
             title={avatar.name}
             onClick={() => onChange(avatar.id)}
-            className={`relative flex flex-col items-center justify-center rounded-full p-0.5 transition-all duration-150 ease-in-out active:scale-95 active:opacity-80 ${
+            className={`pressable relative flex flex-col items-center justify-center rounded-full p-0.5 ${
               selected ? "ring-2 ring-[var(--accent)]" : ""
             }`}
           >

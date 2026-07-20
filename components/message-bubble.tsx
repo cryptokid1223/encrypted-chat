@@ -12,6 +12,7 @@ export type MessageBubbleProps = {
   isFirstInGroup: boolean;
   isLastInGroup: boolean;
   isPending?: boolean;
+  animateIn?: boolean;
   failed?: boolean;
   onRetry?: (id: string) => void;
 };
@@ -55,6 +56,7 @@ export const MessageBubble = memo(function MessageBubble({
   isFirstInGroup,
   isLastInGroup,
   isPending,
+  animateIn,
   failed,
   onRetry,
 }: MessageBubbleProps) {
@@ -74,7 +76,7 @@ export const MessageBubble = memo(function MessageBubble({
         </div>
       ) : null}
       <div
-        className={`flex flex-col ${isMine ? "items-end" : "items-start"}`}
+        className={`flex flex-col ${isMine ? "items-end" : "items-start"}${animateIn ? " msg-enter" : ""}`}
         style={{ marginTop: showDayDivider ? 0 : groupGap }}
       >
         <div
@@ -97,7 +99,7 @@ export const MessageBubble = memo(function MessageBubble({
             <button
               type="button"
               onClick={() => onRetry(id)}
-              className="text-[length:var(--text-caption)] font-medium text-[var(--destructive)] transition-opacity duration-150 ease-in-out active:opacity-70"
+              className="pressable text-[length:var(--text-caption)] font-medium text-[var(--destructive)]"
             >
               Tap to retry
             </button>

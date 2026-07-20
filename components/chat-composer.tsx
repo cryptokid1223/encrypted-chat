@@ -38,9 +38,9 @@ export function ChatComposer({
           type="submit"
           disabled={disabled || !canSend}
           aria-label="Send"
-          className="flex h-11 w-11 shrink-0 items-center justify-center active:opacity-70 disabled:opacity-40"
+          className="pressable flex h-11 w-11 shrink-0 items-center justify-center disabled:opacity-40"
         >
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--accent)] text-white transition-colors duration-150 ease-in-out active:bg-[var(--accent-pressed)]">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--accent)] text-white">
             <ArrowUpIcon className="h-[18px] w-[18px]" />
           </span>
         </button>

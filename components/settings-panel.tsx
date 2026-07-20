@@ -113,13 +113,13 @@ export function SettingsPanel() {
   const displayUsername = username ? `@${username}` : "";
 
   return (
-    <div className="flex h-app min-h-0 w-full flex-col overflow-hidden bg-[var(--bg)] md:h-full md:flex-1">
+    <div className="screen-enter flex h-app min-h-0 w-full min-w-0 flex-col overflow-hidden overflow-x-hidden bg-[var(--bg)] md:h-full md:flex-1">
       <header className="safe-pt shrink-0 border-b border-[var(--divider)] bg-[var(--bg)] md:hidden">
         <div className="flex h-[52px] items-center gap-[var(--sp-1)] px-[var(--sp-2)]">
           <Link
             href="/chats"
             aria-label="Back to chats"
-            className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--text-secondary)] transition-opacity duration-150 ease-in-out active:opacity-70"
+            className="pressable flex h-11 w-11 shrink-0 items-center justify-center text-[var(--text-secondary)]"
           >
             <ChevronLeftIcon className="h-5 w-5" />
           </Link>
@@ -136,7 +136,7 @@ export function SettingsPanel() {
               type="button"
               aria-label="Edit avatar"
               onClick={() => setEditingAvatar(true)}
-              className="relative flex h-[88px] w-[88px] items-center justify-center transition-opacity duration-150 ease-in-out active:opacity-80"
+              className="pressable relative flex h-[88px] w-[88px] items-center justify-center"
             >
               <Avatar avatarId={avatarId} size={88} />
               <span className="absolute -bottom-0.5 -right-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent)] text-white ring-2 ring-[var(--bg)]">
@@ -225,14 +225,14 @@ export function SettingsPanel() {
           <button
             type="button"
             aria-label="Close avatar picker"
-            className="absolute inset-0 bg-black/60"
+            className="sheet-backdrop-enter absolute inset-0 bg-black/60"
             onClick={() => setEditingAvatar(false)}
           />
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="avatar-picker-title"
-            className="safe-pb relative z-10 w-full max-w-md rounded-t-[var(--radius-sheet)] bg-[var(--surface-elevated)] sm:rounded-[var(--radius-sheet)]"
+            className="sheet-panel-enter safe-pb relative z-10 w-full max-w-md rounded-t-[var(--radius-sheet)] bg-[var(--surface-elevated)] sm:rounded-[var(--radius-sheet)]"
           >
             <div className="flex justify-center pt-[var(--sp-2)]">
               <div className="h-1 w-9 rounded-full bg-[var(--divider)]" />
@@ -265,7 +265,7 @@ export function SettingsPanel() {
             <button
               type="button"
               onClick={() => setEditingAvatar(false)}
-              className="flex min-h-11 w-full items-center justify-center text-[length:var(--text-body)] text-[var(--text-primary)] transition-opacity duration-150 ease-in-out active:opacity-70"
+              className="pressable flex min-h-11 w-full items-center justify-center text-[length:var(--text-body)] text-[var(--text-primary)]"
             >
               Cancel
             </button>

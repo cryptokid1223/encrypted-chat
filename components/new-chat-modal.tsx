@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeftIcon } from "@/components/icons";
+import { InlineSpinner } from "@/components/inline-spinner";
 import { orderedParticipants } from "@/lib/chat";
 import { createClient } from "@/lib/supabase/client";
 
@@ -135,21 +136,21 @@ function NewChatSheet({ onClose }: { onClose: () => void }) {
       <button
         type="button"
         aria-label="Close new chat"
-        className="absolute inset-0 bg-black/60 transition-opacity duration-150 ease-in-out"
+        className="sheet-backdrop-enter absolute inset-0 bg-black/60 transition-opacity duration-150 ease-in-out"
         onClick={dismiss}
       />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-chat-title"
-        className="safe-pb relative flex max-h-[min(85%,100%)] w-full max-w-lg flex-col rounded-t-2xl border border-[#2E2B28] bg-[#1A1816] md:max-h-[90%] md:rounded-2xl"
+        className="sheet-panel-enter safe-pb relative flex max-h-[min(85%,100%)] w-full max-w-lg flex-col rounded-t-2xl border border-[#2E2B28] bg-[#1A1816] md:max-h-[90%] md:rounded-2xl"
       >
         <div className="flex shrink-0 items-center gap-1 border-b border-[#2E2B28] px-2 py-1">
           <button
             type="button"
             aria-label="Close"
             onClick={dismiss}
-            className="flex h-11 w-11 items-center justify-center rounded-full text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9]"
+            className="pressable flex h-11 w-11 items-center justify-center rounded-full text-[#6E6963] hover:bg-[#242220] hover:text-[#FAFAF9]"
           >
             <ChevronLeftIcon className="h-5 w-5 md:hidden" />
             <span className="hidden text-[18px] leading-none md:inline">×</span>
@@ -188,16 +189,23 @@ function NewChatSheet({ onClose }: { onClose: () => void }) {
               <button
                 type="button"
                 onClick={dismiss}
-                className="flex h-11 min-h-[44px] flex-1 items-center justify-center rounded-xl px-4 text-[13px] font-medium text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9]"
+                className="pressable flex h-11 min-h-[44px] flex-1 items-center justify-center rounded-xl px-4 text-[13px] font-medium text-[#6E6963] hover:bg-[#242220] hover:text-[#FAFAF9]"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={busy || !username.trim()}
-                className="flex h-11 min-h-[44px] flex-1 items-center justify-center rounded-xl bg-[#EA580C] px-4 text-[13px] font-medium text-white transition-colors duration-150 ease-in-out hover:bg-[#C2410C] disabled:opacity-40"
+                className="pressable flex h-11 min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl bg-[#EA580C] px-4 text-[13px] font-medium text-white hover:bg-[#C2410C] disabled:opacity-40"
               >
-                {busy ? "Opening…" : "Chat"}
+                {busy ? (
+                  <>
+                    <InlineSpinner className="h-4 w-4" />
+                    Opening…
+                  </>
+                ) : (
+                  "Chat"
+                )}
               </button>
             </div>
           </form>

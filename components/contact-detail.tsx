@@ -39,14 +39,14 @@ function NicknameSheet({
       <button
         type="button"
         aria-label="Close nickname editor"
-        className="absolute inset-0 bg-black/60"
+        className="sheet-backdrop-enter absolute inset-0 bg-black/60"
         onClick={onClose}
       />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="nickname-editor-title"
-        className="safe-pb relative w-full rounded-t-[var(--radius-sheet)] bg-[var(--surface-elevated)] p-[var(--sp-5)]"
+        className="sheet-panel-enter safe-pb relative w-full rounded-t-[var(--radius-sheet)] bg-[var(--surface-elevated)] p-[var(--sp-5)]"
       >
         <div className="flex justify-center pb-[var(--sp-2)]">
           <div className="h-1 w-9 rounded-full bg-[var(--divider)]" />
@@ -81,7 +81,7 @@ function NicknameSheet({
             type="button"
             disabled={busy}
             onClick={onClose}
-            className="flex min-h-11 flex-1 items-center justify-center rounded-[var(--radius-input)] text-[length:var(--text-body)] font-medium text-[var(--text-primary)] transition-opacity duration-150 ease-in-out active:opacity-70 disabled:opacity-40"
+            className="pressable flex min-h-11 flex-1 items-center justify-center rounded-[var(--radius-input)] text-[length:var(--text-body)] font-medium text-[var(--text-primary)] disabled:opacity-40"
           >
             Cancel
           </button>
@@ -103,7 +103,7 @@ function NicknameSheet({
                   }
                 })();
               }}
-              className="flex min-h-11 flex-1 items-center justify-center rounded-[var(--radius-input)] text-[length:var(--text-body)] font-medium text-[var(--destructive)] transition-opacity duration-150 ease-in-out active:opacity-70 disabled:opacity-40"
+              className="pressable flex min-h-11 flex-1 items-center justify-center rounded-[var(--radius-input)] text-[length:var(--text-body)] font-medium text-[var(--destructive)] disabled:opacity-40"
             >
               Clear
             </button>
@@ -125,7 +125,7 @@ function NicknameSheet({
                 }
               })();
             }}
-            className="flex min-h-11 flex-1 items-center justify-center rounded-[var(--radius-input)] bg-[var(--accent)] text-[length:var(--text-body)] font-semibold text-white transition-colors duration-150 ease-in-out active:bg-[var(--accent-pressed)] disabled:opacity-40"
+            className="pressable flex min-h-11 flex-1 items-center justify-center rounded-[var(--radius-input)] bg-[var(--accent)] text-[length:var(--text-body)] font-semibold text-white active:bg-[var(--accent-pressed)] disabled:opacity-40"
           >
             Save
           </button>
@@ -163,7 +163,7 @@ export function ContactDetail({
   const showUsernameSubtitle = hasNickname(identity);
 
   return (
-    <div className="fixed inset-x-0 top-0 z-50 flex h-app flex-col md:inset-0 md:items-center md:justify-center md:bg-black/60 md:p-[var(--sp-4)]">
+    <div className="screen-enter fixed inset-x-0 top-0 z-50 flex h-app min-w-0 flex-col overflow-x-hidden md:inset-0 md:items-center md:justify-center md:bg-black/60 md:p-[var(--sp-4)]">
       <button
         type="button"
         aria-label="Close contact detail"
@@ -177,7 +177,7 @@ export function ContactDetail({
               type="button"
               aria-label="Back"
               onClick={onClose}
-              className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--text-secondary)] transition-opacity duration-150 ease-in-out active:opacity-70"
+              className="pressable flex h-11 w-11 shrink-0 items-center justify-center text-[var(--text-secondary)]"
             >
               <ChevronLeftIcon className="h-5 w-5" />
             </button>
