@@ -328,6 +328,36 @@ html.kb-open .composer-bar {
   height: var(--app-height, 100dvh);
 }
 
+/* Key QR scanner — size html5-qrcode's injected video + shaded region to the
+   full preview so qrbox math stays centered over the live camera. */
+.key-qr-reader {
+  position: absolute !important;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100%;
+  overflow: hidden;
+  background: #0f0e0d;
+}
+
+.key-qr-reader video {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  object-fit: cover !important;
+  display: block !important;
+}
+
+.key-qr-reader #qr-shaded-region {
+  border-color: rgba(0, 0, 0, 0.45) !important;
+}
+
+.key-qr-reader #qr-shaded-region > div {
+  background-color: #ea580c !important;
+}
+
 /* Prevent iOS Safari auto-zoom on focus — inputs must be >= 16px. */
 @media screen and (max-width: 767px) {
   input,
