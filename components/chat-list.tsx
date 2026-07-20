@@ -13,6 +13,11 @@ import { contactMatchesQuery, displayName } from "@/lib/display-name";
 import { hasPrivateKey, loadPrivateKey } from "@/lib/keystore";
 import type { EncryptedMessageRow } from "@/lib/message-decrypt";
 import { fetchMyGroups, type GroupRow } from "@/lib/groups";
+import {
+  fetchGroupPreview,
+  previewFromGroupMessageRow,
+  type GroupMessageRow,
+} from "@/lib/groupMessages";
 import { Avatar, AVATARS } from "@/lib/avatars";
 import { createClient } from "@/lib/supabase/client";
 
@@ -26,6 +31,18 @@ type ConversationRow = {
   lastPreview: string;
 };
 
+type GroupListRow = GroupRow & {
+  lastActivity: string;
+  lastPreview: string;
+};
+
+function sortGroupsByActivity(rows: GroupListRow[]): GroupListRow[] {
+  return [...rows].sort(
+    (a, b) =>
+      new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime(),
+  );
+}
+
 type ConversationInsert = {
   id: string;
   participant_a: string;
@@ -37,6 +54,17 @@ type MessageInsert = {
   id: string;
   conversation_id: string;
   sender_id: string;
+  ciphertext: string;
+  nonce: string;
+  created_at: string;
+};
+
+type GroupMessageInsert = {
+  id: string;
+  group_id: string;
+  message_uuid: string;
+  sender_id: string;
+  recipient_id: string;
   ciphertext: string;
   nonce: string;
   created_at: string;
@@ -204,7 +232,7 @@ export function ChatList({
   const [composeOpen, setComposeOpen] = useState(false);
   const [loadingList, setLoadingList] = useState(true);
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
-  const [groups, setGroups] = useState<GroupRow[]>([]);
+  const [groups, setGroups] = useState<GroupListRow[]>([]);
   const [listError, setListError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [myUserId, setMyUserId] = useState<string | null>(null);
@@ -212,6 +240,7 @@ export function ChatList({
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const conversationsRef = useRef(conversations);
+  const groupsRef = useRef(groups);
   const myUserIdRef = useRef<string | null>(null);
   const myPrivateKeyRef = useRef<string | null>(null);
   const otherPublicKeyByConvRef = useRef<Map<string, string>>(new Map());
@@ -244,6 +273,20 @@ export function ChatList({
       });
       return sortDmByActivity(updated);
     });
+    setGroups((prev) => {
+      const updated = prev.map((g) => {
+        const next = pending.get(g.id);
+        if (!next) return g;
+        return {
+          ...g,
+          lastActivity: next.lastActivity,
+          ...(next.lastPreview !== undefined
+            ? { lastPreview: next.lastPreview }
+            : {}),
+        };
+      });
+      return sortGroupsByActivity(updated);
+    });
   }, []);
 
   const inboxItems = useMemo((): InboxItem[] => {
@@ -263,8 +306,8 @@ export function ChatList({
       name: g.name,
       avatarId: g.avatarId,
       memberCount: g.memberCount,
-      lastActivity: g.createdAt,
-      lastPreview: "No messages yet",
+      lastActivity: g.lastActivity,
+      lastPreview: g.lastPreview,
     }));
     return sortInboxByActivity([...dm, ...grp]);
   }, [conversations, groups]);
@@ -295,6 +338,10 @@ export function ChatList({
   useEffect(() => {
     conversationsRef.current = conversations;
   }, [conversations]);
+
+  useEffect(() => {
+    groupsRef.current = groups;
+  }, [groups]);
 
   useEffect(() => {
     myUserIdRef.current = myUserId;
@@ -336,7 +383,44 @@ export function ChatList({
       ]);
 
       await loadNicknames();
-      setGroups(groupRows);
+
+      const prevGroupById = new Map(
+        groupsRef.current.map((g) => [
+          g.id,
+          { lastActivity: g.lastActivity, lastPreview: g.lastPreview },
+        ]),
+      );
+
+      const nextGroups = await Promise.all(
+        groupRows.map(async (g) => {
+          const prior = prevGroupById.get(g.id);
+          let lastActivity = prior?.lastActivity ?? g.createdAt;
+          let lastPreview = prior?.lastPreview ?? "No messages yet";
+
+          if (myPrivateKey) {
+            try {
+              const preview = await fetchGroupPreview(
+                g.id,
+                user.id,
+                myPrivateKey,
+                g.createdAt,
+              );
+              lastActivity = preview.lastActivity;
+              lastPreview = preview.lastPreview;
+            } catch {
+              lastPreview = "Encrypted message";
+            }
+          }
+
+          return {
+            ...g,
+            lastActivity,
+            lastPreview,
+          };
+        }),
+      );
+
+      setGroups(sortGroupsByActivity(nextGroups));
 
       if (!convRows || convRows.length === 0) {
         setConversations([]);
@@ -567,6 +651,68 @@ export function ChatList({
                   new Date(currentPending.lastActivity).getTime()
               ) {
                 pendingUpdateRef.current.set(row.conversation_id, {
+                  lastActivity: row.created_at,
+                  ...(lastPreview !== undefined ? { lastPreview } : {}),
+                });
+              }
+
+              if (!flushTimerRef.current) {
+                flushTimerRef.current = setTimeout(() => {
+                  flushTimerRef.current = null;
+                  flushPendingUpdates();
+                }, 120);
+              }
+            })();
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "group_messages",
+            filter: `recipient_id=eq.${user.id}`,
+          },
+          (payload) => {
+            const row = payload.new as GroupMessageInsert;
+            if (!row?.group_id || !row.created_at) return;
+
+            const known = groupsRef.current.some((g) => g.id === row.group_id);
+
+            if (!known) {
+              void loadConversations();
+              return;
+            }
+
+            void (async () => {
+              const myPrivateKey = myPrivateKeyRef.current;
+              let lastPreview: string | undefined;
+              if (myPrivateKey) {
+                try {
+                  const supabase = createClient();
+                  const { data: senderProfile } = await supabase
+                    .from("profiles")
+                    .select("public_key")
+                    .eq("id", row.sender_id)
+                    .maybeSingle();
+
+                  lastPreview = await previewFromGroupMessageRow(
+                    row as GroupMessageRow,
+                    (senderProfile?.public_key as string | null) ?? null,
+                    myPrivateKey,
+                  );
+                } catch {
+                  // Keep existing preview on decrypt failure.
+                }
+              }
+
+              const currentPending = pendingUpdateRef.current.get(row.group_id);
+              if (
+                !currentPending ||
+                new Date(row.created_at).getTime() >=
+                  new Date(currentPending.lastActivity).getTime()
+              ) {
+                pendingUpdateRef.current.set(row.group_id, {
                   lastActivity: row.created_at,
                   ...(lastPreview !== undefined ? { lastPreview } : {}),
                 });

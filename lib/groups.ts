@@ -14,6 +14,14 @@ export type GroupMemberCandidate = {
   avatarId: string | null;
 };
 
+export type GroupMemberWithKey = {
+  userId: string;
+  username: string;
+  avatarId: string | null;
+  publicKey: string;
+  role: string;
+};
+
 const MEMBER_CAP_MESSAGE =
   "This group has reached the member limit. Try fewer members.";
 
@@ -201,6 +209,77 @@ export async function fetchMyGroups(userId: string): Promise<GroupRow[]> {
   }
 
   return groups;
+}
+
+export async function fetchGroupMembersWithKeys(
+  groupId: string,
+  userId: string,
+): Promise<
+  { ok: true; members: GroupMemberWithKey[] } | { ok: false; error: string }
+> {
+  const supabase = createClient();
+
+  const { data: membership } = await supabase
+    .from("group_members")
+    .select("group_id")
+    .eq("group_id", groupId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!membership) {
+    return { ok: false, error: "Group not found." };
+  }
+
+  const { data: rows, error } = await supabase
+    .from("group_members")
+    .select(
+      `
+      user_id,
+      role,
+      profiles (
+        username,
+        avatar_id,
+        public_key
+      )
+    `,
+    )
+    .eq("group_id", groupId);
+
+  if (error || !rows?.length) {
+    return { ok: false, error: "Could not load members." };
+  }
+
+  const members: GroupMemberWithKey[] = [];
+  for (const row of rows) {
+    const raw = row.profiles as
+      | {
+          username: string;
+          avatar_id: string | null;
+          public_key: string | null;
+        }
+      | {
+          username: string;
+          avatar_id: string | null;
+          public_key: string | null;
+        }[]
+      | null;
+    const profile = Array.isArray(raw) ? raw[0] : raw;
+    const publicKey = (profile?.public_key as string | null)?.trim();
+    if (!profile || !publicKey) continue;
+    members.push({
+      userId: row.user_id as string,
+      username: profile.username as string,
+      avatarId: (profile.avatar_id as string | null) ?? null,
+      publicKey,
+      role: row.role as string,
+    });
+  }
+
+  if (members.length === 0) {
+    return { ok: false, error: "Could not load member encryption keys." };
+  }
+
+  return { ok: true, members };
 }
 
 export async function fetchGroupShell(

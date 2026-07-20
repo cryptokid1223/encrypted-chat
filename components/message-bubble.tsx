@@ -22,6 +22,8 @@ export type MessageBubbleProps = {
     AttachmentMeta,
     "kind" | "w" | "h" | "durationMs"
   >;
+  senderLabel?: string;
+  decryptFailed?: boolean;
   onRetry?: (id: string) => void;
 };
 
@@ -68,6 +70,8 @@ export const MessageBubble = memo(function MessageBubble({
   failed,
   localPreviewUrl,
   pendingAttachment,
+  senderLabel,
+  decryptFailed,
   onRetry,
 }: MessageBubbleProps) {
   const radiusClass = bubbleRadiusClass(isMine, isFirstInGroup, isLastInGroup);
@@ -133,7 +137,18 @@ export const MessageBubble = memo(function MessageBubble({
             isMine ? "items-end" : "items-start"
           }`}
         >
-          {isAttachment && attachmentMeta ? (
+          {senderLabel && !isMine && isFirstInGroup ? (
+            <span className="px-[var(--sp-1)] text-[length:var(--text-caption)] text-[var(--text-secondary)]">
+              {senderLabel}
+            </span>
+          ) : null}
+          {decryptFailed ? (
+            <div
+              className={`px-3 py-2 text-[length:var(--text-body)] leading-[1.35] ${radiusClass} bg-[var(--surface-elevated)] text-[var(--text-secondary)]`}
+            >
+              Couldn&apos;t decrypt message
+            </div>
+          ) : isAttachment && attachmentMeta ? (
             <div
               className={`overflow-hidden ${radiusClass} ${bubbleClass} ${
                 isPending && !localPreviewUrl && attachmentMeta.kind !== "audio"

@@ -2,63 +2,894 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
-import { ChevronLeftIcon } from "@/components/icons";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ChatComposer, type VoiceRecordingPayload } from "@/components/chat-composer";
 import { GroupAvatar } from "@/components/group-avatar";
-import { fetchGroupShell } from "@/lib/groups";
+import { ChevronLeftIcon } from "@/components/icons";
+import { useKeyGate } from "@/components/key-gate";
+import { MessageBubble } from "@/components/message-bubble";
+import { PhotoViewerHostProvider } from "@/components/photo-viewer-host";
+import { useNicknames } from "@/components/nicknames-context";
+import { useVisualViewport } from "@/hooks/useVisualViewport";
+import { uploadEncryptedAttachment } from "@/lib/attachmentStorage";
+import { isSameCalendarDay } from "@/lib/chat";
+import { encryptMessage } from "@/lib/crypto";
+import { displayName } from "@/lib/display-name";
+import { encryptFile } from "@/lib/fileCrypto";
+import {
+  decryptGroupMessageBatch,
+  decryptGroupMessageRow,
+  type GroupMessageRow,
+} from "@/lib/groupMessages";
+import {
+  fetchGroupMembersWithKeys,
+  fetchGroupShell,
+  type GroupMemberWithKey,
+} from "@/lib/groups";
+import {
+  ImageTooLargeError,
+  processImageForSend,
+  processVideoForSend,
+  VideoTooLargeError,
+  VideoUnsupportedError,
+} from "@/lib/imageProcessing";
+import { hasPrivateKey, loadPrivateKey } from "@/lib/keystore";
+import { buildAttachmentBody } from "@/lib/messageContent";
 import { createClient } from "@/lib/supabase/client";
+import { stopVoicePlayback } from "@/lib/voicePlayer";
+
+type DisplayMessage = {
+  id: string;
+  senderId: string;
+  body: string;
+  createdAt: string;
+  failed?: boolean;
+  decryptFailed?: boolean;
+  localPreviewUrl?: string;
+  pendingAttachment?: Pick<
+    import("@/lib/fileCrypto").AttachmentMeta,
+    "kind" | "w" | "h" | "durationMs"
+  >;
+};
+
+function isSameRenderGroup(
+  aSender: string,
+  aTime: string,
+  bSender: string,
+  bTime: string,
+): boolean {
+  if (aSender !== bSender) return false;
+  const diff = Math.abs(new Date(aTime).getTime() - new Date(bTime).getTime());
+  return diff <= 60 * 1000;
+}
+
+function isOptimisticPending(id: string): boolean {
+  return id.startsWith("local:");
+}
+
+function messageUuidFromId(id: string): string {
+  return id.startsWith("local:") ? id.slice("local:".length) : id;
+}
+
+function optimisticId(messageUuid: string): string {
+  return `local:${messageUuid}`;
+}
+
+function ChatHistorySkeleton() {
+  return (
+    <div
+      className="flex flex-1 flex-col justify-end gap-[var(--sp-3)] px-[var(--sp-3)] pb-[var(--sp-4)]"
+      aria-hidden
+    >
+      <div className="flex justify-start">
+        <div className="skeleton-shimmer h-12 w-[62%] max-w-[240px] rounded-[18px] rounded-bl-[6px]" />
+      </div>
+      <div className="flex justify-end">
+        <div className="skeleton-shimmer h-10 w-[48%] max-w-[200px] rounded-[18px] rounded-br-[6px]" />
+      </div>
+    </div>
+  );
+}
 
 export function GroupRoom() {
   const params = useParams<{ groupId: string }>();
   const groupId = params.groupId;
+  const { requireKeyImport } = useKeyGate();
+  const { getNickname } = useNicknames();
 
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [avatarId, setAvatarId] = useState<string | null>(null);
   const [memberCount, setMemberCount] = useState(0);
+  const [members, setMembers] = useState<GroupMemberWithKey[]>([]);
+  const [myUserId, setMyUserId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<DisplayMessage[]>([]);
+  const [sending, setSending] = useState(false);
+  const [attachUploading, setAttachUploading] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
+
+  const messagesRef = useRef<DisplayMessage[]>([]);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const photoViewerHostRef = useRef<HTMLDivElement>(null);
+  const seenRowIdsRef = useRef(new Set<string>());
+  const seenMessageUuidsRef = useRef(new Set<string>());
+  const myUserIdRef = useRef<string | null>(null);
+  const myPrivateKeyRef = useRef<string | null>(null);
+  const membersRef = useRef<GroupMemberWithKey[]>([]);
+  const senderPublicKeyByUserIdRef = useRef(new Map<string, string>());
+  const pendingByUuidRef = useRef<Map<string, { tempId: string; body: string }>>(
+    new Map(),
+  );
+  const initialMessageIdsRef = useRef<Set<string> | null>(null);
+  const pendingFileRef = useRef<Map<string, File>>(new Map());
+  const pendingAudioRef = useRef<
+    Map<string, { bytes: Uint8Array; mime: string; durationMs: number }>
+  >(new Map());
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    initialMessageIdsRef.current = null;
+    pendingFileRef.current.clear();
+    pendingAudioRef.current.clear();
+    return () => {
+      stopVoicePlayback();
+      for (const m of messagesRef.current) {
+        if (m.localPreviewUrl) {
+          URL.revokeObjectURL(m.localPreviewUrl);
+        }
+      }
+    };
+  }, [groupId]);
+
+  useEffect(() => {
+    if (status === "ready" && initialMessageIdsRef.current === null) {
+      initialMessageIdsRef.current = new Set(messages.map((m) => m.id));
+    }
+  }, [status, messages]);
+
+  const scrollToBottom = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, []);
+
+  const isNearBottom = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return true;
+    const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
+    return remaining < 180;
+  }, []);
+
+  useEffect(() => {
+    if (!isNearBottom()) return;
+    scrollToBottom();
+  }, [messages, isNearBottom, scrollToBottom]);
+
+  useVisualViewport(scrollToBottom);
+
+  const appendDecryptedMessage = useCallback((display: DisplayMessage) => {
+    if (seenMessageUuidsRef.current.has(display.id)) {
+      const pending = pendingByUuidRef.current.get(display.id);
+      if (pending) {
+        pendingByUuidRef.current.delete(display.id);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === pending.tempId
+              ? {
+                  ...m,
+                  id: display.id,
+                  createdAt: display.createdAt,
+                  body: display.body,
+                  decryptFailed: display.decryptFailed,
+                  failed: false,
+                }
+              : m,
+          ),
+        );
+      }
+      return;
+    }
+
+    seenMessageUuidsRef.current.add(display.id);
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === display.id || messageUuidFromId(m.id) === display.id)) {
+        return prev;
+      }
+      return [...prev, display];
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
+    const supabase = createClient();
+    let channel: ReturnType<typeof supabase.channel> | null = null;
 
-    async function load() {
+    async function setup() {
       setStatus("loading");
       setError(null);
+      seenRowIdsRef.current = new Set();
+      seenMessageUuidsRef.current = new Set();
+      pendingByUuidRef.current.clear();
 
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      try {
+        if (!(await hasPrivateKey())) {
+          if (!cancelled) requireKeyImport();
+          return;
+        }
 
-      if (!user) {
+        const privateKey = await loadPrivateKey();
+        if (!privateKey) {
+          if (!cancelled) requireKeyImport();
+          return;
+        }
+
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user) {
+          if (!cancelled) {
+            setError("Not signed in.");
+            setStatus("error");
+          }
+          return;
+        }
+
+        const shell = await fetchGroupShell(groupId, user.id);
+        if (!shell.ok) {
+          if (!cancelled) {
+            setError(shell.error);
+            setStatus("error");
+          }
+          return;
+        }
+
+        const membersResult = await fetchGroupMembersWithKeys(groupId, user.id);
+        if (!membersResult.ok) {
+          if (!cancelled) {
+            setError(membersResult.error);
+            setStatus("error");
+          }
+          return;
+        }
+
+        const senderKeyMap = new Map<string, string>();
+        for (const member of membersResult.members) {
+          senderKeyMap.set(member.userId, member.publicKey);
+        }
+
+        const { data: rows, error: messagesError } = await supabase
+          .from("group_messages")
+          .select(
+            "id, group_id, message_uuid, sender_id, recipient_id, ciphertext, nonce, created_at",
+          )
+          .eq("group_id", groupId)
+          .eq("recipient_id", user.id)
+          .order("created_at", { ascending: true });
+
+        if (messagesError) {
+          if (!cancelled) {
+            setError("Could not load messages.");
+            setStatus("error");
+          }
+          return;
+        }
+
+        const decrypted = await decryptGroupMessageBatch(
+          (rows ?? []) as GroupMessageRow[],
+          senderKeyMap,
+          privateKey,
+        );
+
+        if (cancelled) return;
+
+        for (const row of rows ?? []) {
+          seenRowIdsRef.current.add(row.id as string);
+        }
+        for (const m of decrypted) {
+          seenMessageUuidsRef.current.add(m.id);
+        }
+
+        membersRef.current = membersResult.members;
+        senderPublicKeyByUserIdRef.current = senderKeyMap;
+        setMembers(membersResult.members);
+        myUserIdRef.current = user.id;
+        myPrivateKeyRef.current = privateKey;
+        setMyUserId(user.id);
+        setName(shell.name);
+        setAvatarId(shell.avatarId);
+        setMemberCount(shell.memberCount);
+        setMessages(
+          decrypted.map((m) => ({
+            id: m.id,
+            senderId: m.senderId,
+            body: m.body,
+            createdAt: m.createdAt,
+            decryptFailed: m.decryptFailed,
+          })),
+        );
+        setStatus("ready");
+
+        channel = supabase
+          .channel(`group-messages:${groupId}:${user.id}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "group_messages",
+              filter: `group_id=eq.${groupId}`,
+            },
+            (payload) => {
+              void (async () => {
+                const row = payload.new as GroupMessageRow;
+                if (!row?.id || row.recipient_id !== user.id) return;
+                if (seenRowIdsRef.current.has(row.id)) return;
+                seenRowIdsRef.current.add(row.id);
+
+                const myId = myUserIdRef.current;
+                if (myId && row.sender_id === myId) {
+                  const pending = pendingByUuidRef.current.get(row.message_uuid);
+                  if (pending) {
+                    pendingByUuidRef.current.delete(row.message_uuid);
+                    seenMessageUuidsRef.current.add(row.message_uuid);
+                    if (cancelled) return;
+                    setMessages((prev) =>
+                      prev.map((m) =>
+                        m.id === pending.tempId
+                          ? {
+                              ...m,
+                              id: row.message_uuid,
+                              createdAt: row.created_at,
+                              failed: false,
+                            }
+                          : m,
+                      ),
+                    );
+                    return;
+                  }
+                }
+
+                const display = await decryptGroupMessageRow(
+                  row,
+                  senderPublicKeyByUserIdRef.current.get(row.sender_id),
+                  privateKey,
+                );
+
+                if (cancelled) return;
+                appendDecryptedMessage({
+                  id: display.id,
+                  senderId: display.senderId,
+                  body: display.body,
+                  createdAt: display.createdAt,
+                  decryptFailed: display.decryptFailed,
+                });
+              })();
+            },
+          )
+          .subscribe();
+      } catch {
         if (!cancelled) {
-          setError("Not signed in.");
+          setError("Something went wrong loading this chat.");
           setStatus("error");
         }
-        return;
       }
-
-      const result = await fetchGroupShell(groupId, user.id);
-      if (cancelled) return;
-
-      if (!result.ok) {
-        setError(result.error);
-        setStatus("error");
-        return;
-      }
-
-      setName(result.name);
-      setAvatarId(result.avatarId);
-      setMemberCount(result.memberCount);
-      setStatus("ready");
     }
 
-    void load();
+    void setup();
 
     return () => {
       cancelled = true;
+      if (channel) {
+        void supabase.removeChannel(channel);
+      }
     };
-  }, [groupId]);
+  }, [groupId, requireKeyImport, appendDecryptedMessage]);
+
+  const sendGroupMessage = useCallback(
+    (
+      text: string,
+      existingMessageUuid?: string,
+      options?: { manageSendingState?: boolean },
+    ) => {
+      const manageSendingState = options?.manageSendingState !== false;
+      const myId = myUserIdRef.current;
+      const myKey = myPrivateKeyRef.current;
+      const members = membersRef.current;
+      if (!myId || !myKey || members.length === 0) return;
+
+      const messageUuid = existingMessageUuid ?? crypto.randomUUID();
+      const tempId = optimisticId(messageUuid);
+      const optimisticCreatedAt = new Date().toISOString();
+
+      setMessages((prev) => {
+        const existing = prev.find(
+          (m) => m.id === tempId || messageUuidFromId(m.id) === messageUuid,
+        );
+        if (existing) {
+          return prev.map((m) =>
+            m.id === existing.id
+              ? {
+                  ...m,
+                  body: text,
+                  createdAt: optimisticCreatedAt,
+                  failed: false,
+                  decryptFailed: false,
+                }
+              : m,
+          );
+        }
+        if (prev.some((m) => m.id === tempId)) return prev;
+        return [
+          ...prev,
+          {
+            id: tempId,
+            senderId: myId,
+            body: text,
+            createdAt: optimisticCreatedAt,
+          },
+        ];
+      });
+
+      pendingByUuidRef.current.set(messageUuid, { tempId, body: text });
+
+      void (async () => {
+        if (manageSendingState) {
+          setSending(true);
+        }
+
+        try {
+          if (!(await hasPrivateKey())) {
+            requireKeyImport();
+            return;
+          }
+
+          const missingKey = members.find((m) => !m.publicKey?.trim());
+          if (missingKey) {
+            throw new Error("Member key missing");
+          }
+
+          const encryptedRows = await Promise.all(
+            members.map(async (member) => {
+              const { ciphertext, nonce } = await encryptMessage(
+                text,
+                member.publicKey,
+                myKey,
+              );
+              return {
+                group_id: groupId,
+                message_uuid: messageUuid,
+                sender_id: myId,
+                recipient_id: member.userId,
+                ciphertext,
+                nonce,
+              };
+            }),
+          );
+
+          const supabase = createClient();
+          const { data: inserted, error: insertError } = await supabase
+            .from("group_messages")
+            .insert(encryptedRows)
+            .select(
+              "id, group_id, message_uuid, sender_id, recipient_id, ciphertext, nonce, created_at",
+            );
+
+          if (insertError || !inserted?.length) {
+            throw new Error("Could not send message");
+          }
+
+          for (const row of inserted) {
+            seenRowIdsRef.current.add(row.id as string);
+          }
+
+          pendingByUuidRef.current.delete(messageUuid);
+          seenMessageUuidsRef.current.add(messageUuid);
+
+          const selfRow = (inserted as GroupMessageRow[]).find(
+            (row) => row.recipient_id === myId,
+          );
+
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === tempId || messageUuidFromId(m.id) === messageUuid
+                ? {
+                    ...m,
+                    id: messageUuid,
+                    createdAt: selfRow?.created_at ?? optimisticCreatedAt,
+                    failed: false,
+                  }
+                : m,
+            ),
+          );
+          pendingFileRef.current.delete(tempId);
+          pendingFileRef.current.delete(messageUuid);
+          pendingAudioRef.current.delete(tempId);
+          pendingAudioRef.current.delete(messageUuid);
+        } catch {
+          if (!(await hasPrivateKey())) {
+            requireKeyImport();
+            return;
+          }
+
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === tempId || messageUuidFromId(m.id) === messageUuid
+                ? { ...m, failed: true }
+                : m,
+            ),
+          );
+        } finally {
+          if (manageSendingState) {
+            setSending(false);
+          }
+        }
+      })();
+
+      return messageUuid;
+    },
+    [groupId, requireKeyImport],
+  );
+
+  const runVideoSend = useCallback(
+    async (file: File, existingMessageUuid?: string) => {
+      const myId = myUserIdRef.current;
+      if (!myId) return;
+
+      setAttachError(null);
+      setAttachUploading(true);
+
+      const messageUuid = existingMessageUuid ?? crypto.randomUUID();
+      const tempId = optimisticId(messageUuid);
+
+      pendingFileRef.current.set(messageUuid, file);
+
+      if (file.size > 50 * 1024 * 1024) {
+        setAttachError("Videos must be under 50MB.");
+        setAttachUploading(false);
+        return;
+      }
+
+      if (!existingMessageUuid) {
+        setMessages((prev) => {
+          if (prev.some((m) => messageUuidFromId(m.id) === messageUuid)) {
+            return prev;
+          }
+          return [
+            ...prev,
+            {
+              id: tempId,
+              senderId: myId,
+              body: "",
+              createdAt: new Date().toISOString(),
+              pendingAttachment: { kind: "video", w: 200, h: 200 },
+            },
+          ];
+        });
+      } else {
+        setMessages((prev) =>
+          prev.map((m) =>
+            messageUuidFromId(m.id) === messageUuid
+              ? {
+                  ...m,
+                  failed: false,
+                  pendingAttachment: m.pendingAttachment ?? {
+                    kind: "video",
+                    w: 200,
+                    h: 200,
+                  },
+                }
+              : m,
+          ),
+        );
+      }
+
+      let previewUrl: string | undefined;
+
+      try {
+        const processed = await processVideoForSend(file);
+
+        if (processed.thumbBytes) {
+          previewUrl = URL.createObjectURL(
+            new Blob([processed.thumbBytes.slice()], { type: "image/jpeg" }),
+          );
+        }
+
+        setMessages((prev) =>
+          prev.map((m) =>
+            messageUuidFromId(m.id) === messageUuid
+              ? {
+                  ...m,
+                  localPreviewUrl: m.localPreviewUrl ?? previewUrl,
+                  pendingAttachment: {
+                    kind: "video",
+                    w: processed.w,
+                    h: processed.h,
+                    durationMs: processed.durationMs,
+                  },
+                }
+              : m,
+          ),
+        );
+
+        const { ciphertext, fileKey, nonce } = await encryptFile(processed.bytes);
+
+        let thumbMeta: { path: string; key: string; nonce: string } | undefined;
+        if (processed.thumbBytes) {
+          const thumbEnc = await encryptFile(processed.thumbBytes);
+          const thumbPath = await uploadEncryptedAttachment(
+            thumbEnc.ciphertext,
+            myId,
+          );
+          thumbMeta = {
+            path: thumbPath,
+            key: thumbEnc.fileKey,
+            nonce: thumbEnc.nonce,
+          };
+        }
+
+        const path = await uploadEncryptedAttachment(ciphertext, myId);
+        const body = buildAttachmentBody({
+          v: 1,
+          kind: "video",
+          path,
+          key: fileKey,
+          nonce,
+          mime: processed.mime,
+          size: processed.bytes.length,
+          w: processed.w,
+          h: processed.h,
+          durationMs: processed.durationMs,
+          thumb: thumbMeta,
+        });
+
+        sendGroupMessage(body, messageUuid, { manageSendingState: false });
+      } catch (err) {
+        if (previewUrl) {
+          URL.revokeObjectURL(previewUrl);
+        }
+        if (
+          err instanceof VideoTooLargeError ||
+          err instanceof VideoUnsupportedError
+        ) {
+          setAttachError(err.message);
+          setMessages((prev) =>
+            prev.filter((m) => messageUuidFromId(m.id) !== messageUuid),
+          );
+          pendingFileRef.current.delete(messageUuid);
+          return;
+        }
+        setMessages((prev) =>
+          prev.map((m) =>
+            messageUuidFromId(m.id) === messageUuid ? { ...m, failed: true } : m,
+          ),
+        );
+      } finally {
+        setAttachUploading(false);
+      }
+    },
+    [sendGroupMessage],
+  );
+
+  const runAudioSend = useCallback(
+    async (
+      payload: VoiceRecordingPayload,
+      existingMessageUuid?: string,
+    ) => {
+      const myId = myUserIdRef.current;
+      if (!myId) return;
+
+      setAttachError(null);
+      setAttachUploading(true);
+
+      const messageUuid = existingMessageUuid ?? crypto.randomUUID();
+      const tempId = optimisticId(messageUuid);
+
+      pendingAudioRef.current.set(messageUuid, payload);
+
+      if (!existingMessageUuid) {
+        setMessages((prev) => {
+          if (prev.some((m) => messageUuidFromId(m.id) === messageUuid)) {
+            return prev;
+          }
+          return [
+            ...prev,
+            {
+              id: tempId,
+              senderId: myId,
+              body: "",
+              createdAt: new Date().toISOString(),
+              pendingAttachment: {
+                kind: "audio",
+                durationMs: payload.durationMs,
+              },
+            },
+          ];
+        });
+      } else {
+        setMessages((prev) =>
+          prev.map((m) =>
+            messageUuidFromId(m.id) === messageUuid
+              ? {
+                  ...m,
+                  failed: false,
+                  pendingAttachment: {
+                    kind: "audio",
+                    durationMs: payload.durationMs,
+                  },
+                }
+              : m,
+          ),
+        );
+      }
+
+      try {
+        const { ciphertext, fileKey, nonce } = await encryptFile(payload.bytes);
+        const path = await uploadEncryptedAttachment(ciphertext, myId);
+        const body = buildAttachmentBody({
+          v: 1,
+          kind: "audio",
+          path,
+          key: fileKey,
+          nonce,
+          mime: payload.mime,
+          size: payload.bytes.length,
+          durationMs: payload.durationMs,
+        });
+
+        sendGroupMessage(body, messageUuid, { manageSendingState: false });
+      } catch {
+        setMessages((prev) =>
+          prev.map((m) =>
+            messageUuidFromId(m.id) === messageUuid ? { ...m, failed: true } : m,
+          ),
+        );
+      } finally {
+        setAttachUploading(false);
+      }
+    },
+    [sendGroupMessage],
+  );
+
+  const runAttachmentSend = useCallback(
+    async (file: File, existingMessageUuid?: string) => {
+      const myId = myUserIdRef.current;
+      if (!myId) return;
+
+      setAttachError(null);
+      setAttachUploading(true);
+
+      const messageUuid = existingMessageUuid ?? crypto.randomUUID();
+      const tempId = optimisticId(messageUuid);
+      const previewUrl = URL.createObjectURL(file);
+      pendingFileRef.current.set(messageUuid, file);
+
+      if (!existingMessageUuid) {
+        setMessages((prev) => {
+          if (prev.some((m) => messageUuidFromId(m.id) === messageUuid)) {
+            return prev;
+          }
+          return [
+            ...prev,
+            {
+              id: tempId,
+              senderId: myId,
+              body: "",
+              createdAt: new Date().toISOString(),
+              localPreviewUrl: previewUrl,
+            },
+          ];
+        });
+      } else {
+        setMessages((prev) =>
+          prev.map((m) =>
+            messageUuidFromId(m.id) === messageUuid
+              ? {
+                  ...m,
+                  failed: false,
+                  localPreviewUrl: m.localPreviewUrl ?? previewUrl,
+                }
+              : m,
+          ),
+        );
+      }
+
+      try {
+        const processed = await processImageForSend(file);
+        const { ciphertext, fileKey, nonce } = await encryptFile(processed.bytes);
+        const path = await uploadEncryptedAttachment(ciphertext, myId);
+        const body = buildAttachmentBody({
+          v: 1,
+          kind: "image",
+          path,
+          key: fileKey,
+          nonce,
+          mime: "image/jpeg",
+          size: processed.bytes.length,
+          w: processed.w,
+          h: processed.h,
+        });
+
+        sendGroupMessage(body, messageUuid, { manageSendingState: false });
+      } catch (err) {
+        if (err instanceof ImageTooLargeError) {
+          setAttachError(err.message);
+          URL.revokeObjectURL(previewUrl);
+          setMessages((prev) =>
+            prev.filter((m) => messageUuidFromId(m.id) !== messageUuid),
+          );
+          pendingFileRef.current.delete(messageUuid);
+          return;
+        }
+        setMessages((prev) =>
+          prev.map((m) =>
+            messageUuidFromId(m.id) === messageUuid ? { ...m, failed: true } : m,
+          ),
+        );
+      } finally {
+        setAttachUploading(false);
+      }
+    },
+    [sendGroupMessage],
+  );
+
+  const handleFileSelected = useCallback(
+    (file: File) => {
+      if (file.type.startsWith("image/")) {
+        void runAttachmentSend(file);
+      } else if (file.type.startsWith("video/")) {
+        void runVideoSend(file);
+      } else {
+        setAttachError("Unsupported file type.");
+      }
+    },
+    [runAttachmentSend, runVideoSend],
+  );
+
+  const handleVoiceSend = useCallback(
+    (payload: VoiceRecordingPayload) => {
+      void runAudioSend(payload);
+    },
+    [runAudioSend],
+  );
+
+  const handleSend = useCallback(
+    (text: string) => {
+      sendGroupMessage(text);
+    },
+    [sendGroupMessage],
+  );
+
+  const handleRetry = useCallback(
+    (id: string) => {
+      const messageUuid = messageUuidFromId(id);
+      const audio = pendingAudioRef.current.get(messageUuid);
+      if (audio) {
+        void runAudioSend(audio, messageUuid);
+        return;
+      }
+      const file = pendingFileRef.current.get(messageUuid);
+      if (file) {
+        if (file.type.startsWith("video/")) {
+          void runVideoSend(file, messageUuid);
+        } else {
+          void runAttachmentSend(file, messageUuid);
+        }
+        return;
+      }
+      const msg = messagesRef.current.find(
+        (m) => m.id === id || messageUuidFromId(m.id) === messageUuid,
+      );
+      if (!msg) return;
+      sendGroupMessage(msg.body, messageUuid);
+    },
+    [sendGroupMessage, runAttachmentSend, runVideoSend, runAudioSend],
+  );
 
   if (status === "loading") {
     return (
@@ -74,11 +905,7 @@ export function GroupRoom() {
             </Link>
           </div>
         </header>
-        <div className="flex flex-1 items-center justify-center">
-          <p className="text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]">
-            Loading…
-          </p>
-        </div>
+        <ChatHistorySkeleton />
       </div>
     );
   }
@@ -103,59 +930,130 @@ export function GroupRoom() {
     memberCount === 1 ? "1 member" : `${memberCount} members`;
 
   return (
-    <div className="screen-enter flex h-app min-h-0 w-full min-w-0 flex-col overflow-x-hidden bg-[var(--bg)] md:h-full md:flex-1">
-      <header className="safe-pt shrink-0 border-b border-[var(--divider)] bg-[var(--bg)]">
-        <div className="flex h-[52px] items-center gap-[var(--sp-2)] px-[var(--sp-3)]">
-          <Link
-            href="/chats"
-            aria-label="Back to chats"
-            className="pressable flex h-11 w-11 shrink-0 items-center justify-center text-[var(--text-secondary)] md:hidden"
-          >
-            <ChevronLeftIcon className="h-5 w-5" />
-          </Link>
-          <div className="flex min-h-11 min-w-0 flex-1 items-center gap-[var(--sp-2)]">
-            <GroupAvatar avatarId={avatarId} size={32} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[length:var(--text-title)] font-semibold leading-tight text-[var(--text-primary)]">
-                {name}
-              </p>
-              <p className="text-[length:var(--text-caption)] leading-tight text-[var(--text-secondary)]">
-                {memberLabel}
-              </p>
+    <PhotoViewerHostProvider hostRef={photoViewerHostRef}>
+      <div className="screen-enter relative flex h-app min-h-0 w-full min-w-0 flex-col overflow-x-hidden bg-[var(--bg)] md:h-full md:flex-1">
+        <header className="safe-pt shrink-0 border-b border-[var(--divider)] bg-[var(--bg)]">
+          <div className="flex h-[52px] items-center gap-[var(--sp-2)] px-[var(--sp-3)]">
+            <Link
+              href="/chats"
+              aria-label="Back to chats"
+              className="pressable flex h-11 w-11 shrink-0 items-center justify-center text-[var(--text-secondary)] md:hidden"
+            >
+              <ChevronLeftIcon className="h-5 w-5" />
+            </Link>
+            <div className="flex min-h-11 min-w-0 flex-1 items-center gap-[var(--sp-2)]">
+              <GroupAvatar avatarId={avatarId} size={32} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[length:var(--text-title)] font-semibold leading-tight text-[var(--text-primary)]">
+                  {name}
+                </p>
+                <p className="text-[length:var(--text-caption)] leading-tight text-[var(--text-secondary)]">
+                  {memberLabel}
+                </p>
+              </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <div
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--bg)]"
-        style={{ WebkitOverflowScrolling: "touch", overscrollBehavior: "none" }}
-      >
-        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-[var(--sp-3)] pb-[var(--sp-2)] pt-[var(--sp-2)]">
-          <div className="flex flex-1 flex-col items-center justify-center gap-[var(--sp-2)] text-center">
-            <GroupAvatar avatarId={avatarId} size={48} />
-            <p className="text-[length:var(--text-secondary-size)] font-semibold text-[var(--text-primary)]">
-              {name}
-            </p>
-            <p className="text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]">
-              {memberLabel}
-            </p>
-            <p className="max-w-[240px] text-[length:var(--text-secondary-size)] leading-[1.4] text-[var(--text-secondary)]">
-              No messages yet.
-            </p>
+        <div
+          ref={scrollerRef}
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--bg)]"
+          style={{ WebkitOverflowScrolling: "touch", overscrollBehavior: "none" }}
+        >
+          <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-[var(--sp-3)] pb-[var(--sp-2)] pt-[var(--sp-2)]">
+            {messages.length === 0 ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-[var(--sp-2)] text-center">
+                <GroupAvatar avatarId={avatarId} size={48} />
+                <p className="text-[length:var(--text-secondary-size)] font-semibold text-[var(--text-primary)]">
+                  {name}
+                </p>
+                <p className="text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]">
+                  {memberLabel}
+                </p>
+                <p className="max-w-[240px] text-[length:var(--text-secondary-size)] leading-[1.4] text-[var(--text-secondary)]">
+                  No messages yet.
+                </p>
+              </div>
+            ) : (
+              <ul className="flex flex-col">
+                {messages.map((m, i) => {
+                  const mine = m.senderId === myUserId;
+                  const prev = messages[i - 1];
+                  const next = messages[i + 1];
+
+                  const sameGroupPrev = prev
+                    ? isSameRenderGroup(
+                        prev.senderId,
+                        prev.createdAt,
+                        m.senderId,
+                        m.createdAt,
+                      )
+                    : false;
+                  const sameGroupNext = next
+                    ? isSameRenderGroup(
+                        m.senderId,
+                        m.createdAt,
+                        next.senderId,
+                        next.createdAt,
+                      )
+                    : false;
+
+                  const isFirstInGroup = !sameGroupPrev;
+                  const isLastInGroup = !sameGroupNext;
+                  const showDayDivider =
+                    !prev || !isSameCalendarDay(prev.createdAt, m.createdAt);
+
+                  const senderMember = members.find(
+                    (member) => member.userId === m.senderId,
+                  );
+                  const senderLabel =
+                    !mine && isFirstInGroup && senderMember
+                      ? displayName({
+                          username: senderMember.username,
+                          nickname: getNickname(m.senderId),
+                        })
+                      : undefined;
+
+                  return (
+                    <li key={m.id}>
+                      <MessageBubble
+                        id={m.id}
+                        body={m.body}
+                        isMine={mine}
+                        timestamp={m.createdAt}
+                        showDayDivider={showDayDivider}
+                        isFirstInGroup={isFirstInGroup}
+                        isLastInGroup={isLastInGroup}
+                        isPending={isOptimisticPending(m.id)}
+                        animateIn={
+                          initialMessageIdsRef.current !== null &&
+                          !initialMessageIdsRef.current.has(m.id)
+                        }
+                        failed={m.failed}
+                        decryptFailed={m.decryptFailed}
+                        localPreviewUrl={m.localPreviewUrl}
+                        pendingAttachment={m.pendingAttachment}
+                        senderLabel={senderLabel}
+                        onRetry={handleRetry}
+                      />
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <div ref={bottomRef} />
           </div>
         </div>
-      </div>
 
-      <div className="composer-bar shrink-0 border-t border-[var(--divider)] bg-[var(--bg)] opacity-60">
-        <div className="mx-auto flex w-full max-w-3xl px-[var(--sp-3)] py-[var(--sp-2)]">
-          <div className="flex min-h-10 w-full items-center rounded-[var(--radius-input)] border border-[var(--divider)] bg-[var(--surface)] px-[var(--sp-4)] py-[var(--sp-2)]">
-            <p className="text-[length:var(--text-body)] text-[var(--text-secondary)]">
-              Group messaging coming in next build
-            </p>
-          </div>
-        </div>
+        <ChatComposer
+          onSend={handleSend}
+          onFileSelected={handleFileSelected}
+          onVoiceSend={handleVoiceSend}
+          disabled={sending}
+          attachDisabled={attachUploading}
+          attachError={attachError}
+        />
       </div>
-    </div>
+    </PhotoViewerHostProvider>
   );
 }
