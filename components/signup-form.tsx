@@ -1,32 +1,85 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { AvatarPicker } from "@/components/avatar-picker";
+import {
+  AuthBrandHeader,
+  AuthFooterLink,
+  AuthPrimaryButton,
+  AuthScreenHeading,
+  AuthTextField,
+} from "@/components/auth-ui";
+import {
+  CheckIcon,
+  ChevronLeftIcon,
+  WarningTriangleIcon,
+} from "@/components/icons";
 import {
   passwordStrengthHint,
   usernameToAuthEmail,
   validateUsername,
 } from "@/lib/auth-email";
-import { DEFAULT_AVATAR_ID } from "@/lib/avatars";
+import { Avatar, AVATARS, DEFAULT_AVATAR_ID } from "@/lib/avatars";
 import { generateKeyPair } from "@/lib/crypto";
 import { savePrivateKey } from "@/lib/keystore";
 import { createClient } from "@/lib/supabase/client";
 
+type FieldErrors = {
+  username?: string | null;
+  password?: string | null;
+  confirm?: string | null;
+};
+
+function validateStep1Fields(
+  username: string,
+  password: string,
+  confirm: string,
+): FieldErrors {
+  const errors: FieldErrors = {};
+  const usernameError = validateUsername(username);
+  if (usernameError) errors.username = usernameError;
+  if (password.length < 10) {
+    errors.password = "Password must be at least 10 characters.";
+  }
+  if (password !== confirm) {
+    errors.confirm = "Passwords do not match.";
+  }
+  return errors;
+}
+
+function isStep1Valid(username: string, password: string, confirm: string): boolean {
+  return (
+    !validateUsername(username) &&
+    password.length >= 10 &&
+    password === confirm
+  );
+}
+
 export function SignupForm() {
   const router = useRouter();
+  const [step, setStep] = useState<1 | 2>(1);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [avatarId, setAvatarId] = useState(DEFAULT_AVATAR_ID);
   const [acknowledged, setAcknowledged] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const strength = useMemo(() => passwordStrengthHint(password), [password]);
+  const step1Valid = isStep1Valid(username, password, confirm);
   const canSubmit =
-    acknowledged && !busy && username.length > 0 && password.length >= 10;
+    acknowledged && !busy && step1Valid && Boolean(avatarId);
+
+  function handleContinue() {
+    setError(null);
+    const errors = validateStep1Fields(username, password, confirm);
+    setFieldErrors(errors);
+    if (Object.keys(errors).length === 0) {
+      setStep(2);
+    }
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -106,121 +159,213 @@ export function SignupForm() {
     }
   }
 
+  if (step === 1) {
+    return (
+      <div>
+        <AuthBrandHeader subtitle="Private messaging. End-to-end encrypted." />
+        <AuthScreenHeading title="Create your account" progress="1 of 2" />
+
+        <div className="mt-[var(--sp-6)] space-y-[var(--sp-4)]">
+          <AuthTextField
+            id="username"
+            name="username"
+            label="Username"
+            autoComplete="username"
+            value={username}
+            onChange={(value) => {
+              setUsername(value.toLowerCase());
+              if (fieldErrors.username) {
+                setFieldErrors((prev) => ({ ...prev, username: null }));
+              }
+            }}
+            onBlur={() => {
+              if (username.trim()) {
+                setFieldErrors((prev) => ({
+                  ...prev,
+                  username: validateUsername(username),
+                }));
+              }
+            }}
+            error={fieldErrors.username}
+            required
+          />
+
+          <AuthTextField
+            id="password"
+            name="password"
+            label="Password"
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={(value) => {
+              setPassword(value);
+              if (fieldErrors.password) {
+                setFieldErrors((prev) => ({ ...prev, password: null }));
+              }
+            }}
+            onBlur={() => {
+              if (password) {
+                setFieldErrors((prev) => ({
+                  ...prev,
+                  password:
+                    password.length < 10
+                      ? "Password must be at least 10 characters."
+                      : null,
+                }));
+              }
+            }}
+            error={fieldErrors.password}
+            hint={strength || null}
+            required
+            minLength={10}
+          />
+
+          <AuthTextField
+            id="confirm"
+            name="confirm"
+            label="Confirm password"
+            type="password"
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(value) => {
+              setConfirm(value);
+              if (fieldErrors.confirm) {
+                setFieldErrors((prev) => ({ ...prev, confirm: null }));
+              }
+            }}
+            onBlur={() => {
+              if (confirm) {
+                setFieldErrors((prev) => ({
+                  ...prev,
+                  confirm:
+                    password !== confirm ? "Passwords do not match." : null,
+                }));
+              }
+            }}
+            error={fieldErrors.confirm}
+            required
+            minLength={10}
+          />
+        </div>
+
+        <div className="mt-[var(--sp-6)]">
+          <AuthPrimaryButton
+            type="button"
+            disabled={!step1Valid}
+            onClick={handleContinue}
+          >
+            Continue
+          </AuthPrimaryButton>
+        </div>
+
+        <div className="mt-[var(--sp-4)]">
+          <AuthFooterLink
+            text="Already have an account?"
+            linkText="Log in"
+            href="/login"
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <div>
-        <label
-          htmlFor="username"
-          className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-[#6E6963]"
+    <form onSubmit={onSubmit}>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            setStep(1);
+          }}
+          aria-label="Back to account details"
+          className="absolute left-0 top-0 flex h-11 w-11 items-center justify-center text-[var(--text-secondary)] transition-opacity duration-150 ease-in-out active:opacity-70"
         >
-          Username
-        </label>
-        <input
-          id="username"
-          name="username"
-          autoComplete="username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value.toLowerCase())}
-          className="h-12 w-full rounded-xl border border-[#2E2B28] bg-[#242220] px-4 text-[16px] text-[#FAFAF9] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
-          required
-        />
+          <ChevronLeftIcon className="h-5 w-5" />
+        </button>
+        <div className="pl-[var(--sp-8)]">
+          <AuthScreenHeading title="Choose your avatar" progress="2 of 2" />
+        </div>
       </div>
 
-      <div>
-        <label
-          htmlFor="password"
-          className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-[#6E6963]"
-        >
-          Password
-        </label>
-        <input
-          id="password"
-          name="password"
-          type="password"
-          autoComplete="new-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="h-12 w-full rounded-xl border border-[#2E2B28] bg-[#242220] px-4 text-[16px] text-[#FAFAF9] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
-          required
-          minLength={10}
-        />
-        {strength ? (
-          <p className="mt-1.5 text-[12px] text-[#6E6963]">{strength}</p>
-        ) : null}
+      <div
+        className="mt-[var(--sp-6)] grid grid-cols-4 gap-[var(--sp-3)]"
+        role="listbox"
+        aria-label="Choose your avatar"
+      >
+        {AVATARS.map((avatar) => {
+          const selected = avatarId === avatar.id;
+          return (
+            <button
+              key={avatar.id}
+              type="button"
+              role="option"
+              aria-selected={selected}
+              title={avatar.name}
+              onClick={() => setAvatarId(avatar.id)}
+              className={`relative flex items-center justify-center rounded-full p-0.5 transition-all duration-150 ease-in-out active:scale-95 active:opacity-80 ${
+                selected ? "ring-2 ring-[var(--accent)]" : ""
+              }`}
+            >
+              <Avatar avatarId={avatar.id} size={64} />
+              {selected ? (
+                <span className="absolute bottom-0 right-0 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent)] text-white ring-2 ring-[var(--bg)]">
+                  <CheckIcon className="h-3 w-3" />
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
       </div>
 
-      <div>
-        <label
-          htmlFor="confirm"
-          className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-[#6E6963]"
-        >
-          Confirm password
-        </label>
-        <input
-          id="confirm"
-          name="confirm"
-          type="password"
-          autoComplete="new-password"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          className="h-12 w-full rounded-xl border border-[#2E2B28] bg-[#242220] px-4 text-[16px] text-[#FAFAF9] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
-          required
-          minLength={10}
-        />
-      </div>
-
-      <div>
-        <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-[#6E6963]">
-          Choose your avatar
-        </p>
-        <AvatarPicker
-          value={avatarId}
-          onChange={setAvatarId}
-          size={44}
-          showLabels={false}
-          columns="auth"
-        />
-      </div>
-
-      <div className="rounded-xl border border-[#78350F]/40 bg-[#451A03] p-3.5">
-        <p className="text-[13px] font-medium leading-[1.4] text-[#FBBF24]/90">
-          No email means no password reset. If you forget your password, this
-          account cannot be recovered by anyone. Save it in a password manager.
-        </p>
-        <label className="mt-2.5 flex min-h-10 items-start gap-2.5 text-[13px] text-[#FBBF24]/80">
+      <div className="mt-[var(--sp-6)] rounded-[var(--radius-card)] border border-[var(--warning-border)] bg-[var(--warning-bg)] p-[var(--sp-4)]">
+        <div className="flex gap-[var(--sp-3)]">
+          <WarningTriangleIcon className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent)]" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[length:var(--text-body)] font-semibold text-[var(--text-primary)]">
+              Save your password
+            </p>
+            <p className="mt-[var(--sp-1)] text-[length:var(--text-secondary-size)] leading-[1.4] text-[var(--text-primary)]">
+              Celesth does not use email, so your password cannot be reset. Store
+              it somewhere safe.
+            </p>
+          </div>
+        </div>
+        <label className="mt-[var(--sp-4)] flex min-h-11 cursor-pointer items-center gap-[var(--sp-3)] text-[length:var(--text-secondary-size)] text-[var(--text-primary)]">
           <input
             type="checkbox"
             checked={acknowledged}
             onChange={(e) => setAcknowledged(e.target.checked)}
-            className="mt-0.5 h-4 w-4 accent-[#EA580C]"
+            className="h-[18px] w-[18px] shrink-0 accent-[var(--accent)]"
           />
-          <span>I understand — I will save my password myself.</span>
+          <span>
+            I understand that my account cannot be recovered without my password.
+          </span>
         </label>
       </div>
 
       {error ? (
-        <p className="text-[13px] text-red-400" role="alert">
+        <p
+          className="mt-[var(--sp-4)] text-[length:var(--text-secondary-size)] text-[var(--destructive)]"
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
 
-      <button
-        type="submit"
-        disabled={!canSubmit}
-        className="flex h-12 w-full items-center justify-center rounded-xl bg-[#EA580C] px-4 text-[14px] font-medium text-white transition-colors duration-150 ease-in-out hover:bg-[#C2410C] disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        {busy ? "Creating account…" : "Create account"}
-      </button>
+      <div className="mt-[var(--sp-6)]">
+        <AuthPrimaryButton disabled={!canSubmit}>
+          {busy ? "Creating account…" : "Create account"}
+        </AuthPrimaryButton>
+      </div>
 
-      <p className="text-center text-[13px] text-[#6E6963]">
-        Already have an account?{" "}
-        <Link
+      <div className="mt-[var(--sp-4)]">
+        <AuthFooterLink
+          text="Already have an account?"
+          linkText="Log in"
           href="/login"
-          className="font-medium text-[#EA580C] transition-colors duration-150 ease-in-out hover:text-[#C2410C]"
-        >
-          Log in
-        </Link>
-      </p>
+        />
+      </div>
     </form>
   );
 }

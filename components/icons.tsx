@@ -117,3 +117,64 @@ export function ChevronRightIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function EyeIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
+      <path
+        d="M2.5 12.5c2.5-4 5.5-6 9.5-6s7 2 9.5 6c-2.5 4-5.5 6-9.5 6s-7-2-9.5-6z"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="12.5" r="2.75" stroke="currentColor" strokeWidth="1.75" />
+    </svg>
+  );
+}
+
+export function EyeOffIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
+      <path
+        d="M3 3l18 18M10.2 10.8A3 3 0 0 0 12 15.5c1.4 0 2.6-.9 3-2.2M6.4 6.7C4.4 8.1 2.9 10 2 12.5c2.5 4 5.5 6 9.5 6 1.4 0 2.7-.3 3.9-.8M14.7 7.3A3 3 0 0 0 12 4.5c-2.8 0-5.1 1.9-5.8 4.5"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function CheckIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
+      <path
+        d="m6 12.5 3.5 3.5L18 7.5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function WarningTriangleIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
+      <path
+        d="M12 4.5 20.5 19.5H3.5L12 4.5z"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12 10v4M12 17.5h.01"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}

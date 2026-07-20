@@ -1,8 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import {
+  AuthBrandHeader,
+  AuthFooterLink,
+  AuthPrimaryButton,
+  AuthScreenHeading,
+  AuthTextField,
+} from "@/components/auth-ui";
 import { usernameToAuthEmail, validateUsername } from "@/lib/auth-email";
 import { createClient } from "@/lib/supabase/client";
 
@@ -10,16 +16,18 @@ export function LoginForm() {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [generalError, setGeneralError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
+    setUsernameError(null);
+    setGeneralError(null);
 
-    const usernameError = validateUsername(username);
-    if (usernameError) {
-      setError(usernameError);
+    const validationError = validateUsername(username);
+    if (validationError) {
+      setUsernameError(validationError);
       return;
     }
 
@@ -32,81 +40,77 @@ export function LoginForm() {
       });
 
       if (signInError) {
-        setError("Invalid username or password.");
+        setGeneralError("Invalid username or password.");
         return;
       }
 
       router.replace("/chats");
       router.refresh();
     } catch {
-      setError("Something went wrong. Try again.");
+      setGeneralError("Something went wrong. Try again.");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <div>
-        <label
-          htmlFor="username"
-          className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-[#6E6963]"
-        >
-          Username
-        </label>
-        <input
+    <form onSubmit={onSubmit}>
+      <AuthBrandHeader subtitle="Private messaging. End-to-end encrypted." />
+      <AuthScreenHeading title="Log in" />
+
+      <div className="mt-[var(--sp-6)] space-y-[var(--sp-4)]">
+        <AuthTextField
           id="username"
           name="username"
+          label="Username"
           autoComplete="username"
           value={username}
-          onChange={(e) => setUsername(e.target.value.toLowerCase())}
-          className="h-12 w-full rounded-xl border border-[#2E2B28] bg-[#242220] px-4 text-[16px] text-[#FAFAF9] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
+          onChange={(value) => {
+            setUsername(value.toLowerCase());
+            if (usernameError) setUsernameError(null);
+          }}
+          onBlur={() => {
+            if (username.trim()) {
+              setUsernameError(validateUsername(username));
+            }
+          }}
+          error={usernameError}
           required
         />
-      </div>
 
-      <div>
-        <label
-          htmlFor="password"
-          className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-[#6E6963]"
-        >
-          Password
-        </label>
-        <input
+        <AuthTextField
           id="password"
           name="password"
+          label="Password"
           type="password"
           autoComplete="current-password"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="h-12 w-full rounded-xl border border-[#2E2B28] bg-[#242220] px-4 text-[16px] text-[#FAFAF9] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
+          onChange={setPassword}
           required
         />
       </div>
 
-      {error ? (
-        <p className="text-[13px] text-red-400" role="alert">
-          {error}
-        </p>
-      ) : null}
+      <div className="mt-[var(--sp-6)]">
+        <AuthPrimaryButton disabled={busy}>
+          {busy ? "Logging in…" : "Log in"}
+        </AuthPrimaryButton>
+        {generalError ? (
+          <p
+            className="mt-[var(--sp-2)] text-center text-[length:var(--text-secondary-size)] text-[var(--destructive)]"
+            role="alert"
+          >
+            {generalError}
+          </p>
+        ) : null}
+      </div>
 
-      <button
-        type="submit"
-        disabled={busy}
-        className="flex h-12 w-full items-center justify-center rounded-xl bg-[#EA580C] px-4 text-[14px] font-medium text-white transition-colors duration-150 ease-in-out hover:bg-[#C2410C] disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        {busy ? "Logging in…" : "Log in"}
-      </button>
-
-      <p className="text-center text-[13px] text-[#6E6963]">
-        New here?{" "}
-        <Link
+      <div className="mt-[var(--sp-4)]">
+        <AuthFooterLink
+          text="New to Celesth?"
+          linkText="Create account"
           href="/signup"
-          className="font-medium text-[#EA580C] transition-colors duration-150 ease-in-out hover:text-[#C2410C]"
-        >
-          Sign up
-        </Link>
-      </p>
+        />
+      </div>
     </form>
   );
 }
