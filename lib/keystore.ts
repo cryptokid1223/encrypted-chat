@@ -24,18 +24,30 @@ const LEGACY_SECURE_KEY = "chat_private_key";
 /** Hard cap for native plugin calls as a last-resort hang guard. */
 const NATIVE_TIMEOUT_MS = 3000;
 
-/**
- * Backend is chosen once. isPluginAvailable is the gate — no call-and-catch probes,
- * no registerPlugin, no proxy shape introspection.
- */
-const USE_NATIVE: boolean =
-  typeof window !== "undefined" &&
-  Capacitor.isNativePlatform() &&
-  Capacitor.isPluginAvailable("SecureStoragePlugin");
+let backendLogged = false;
 
-if (typeof window !== "undefined") {
+/**
+ * Decide Keychain vs IndexedDB at call time (not module init).
+ * Capacitor's bridge / plugin registry may not be ready when this module first
+ * evaluates; a one-shot const would permanently pick the wrong backend.
+ */
+function useNativeBackend(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return (
+      Capacitor.isNativePlatform() &&
+      Capacitor.isPluginAvailable("SecureStoragePlugin")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function logBackendOnce(native: boolean): void {
+  if (backendLogged || typeof window === "undefined") return;
+  backendLogged = true;
   console.log(
-    USE_NATIVE
+    native
       ? "[keystore] backend: keychain"
       : "[keystore] backend: indexeddb(web)",
   );
@@ -74,7 +86,7 @@ function withTimeout<T>(label: string, work: Promise<T>): Promise<T> {
   ]);
 }
 
-// ── IndexedDB (web) ──────────────────────────────────────────────
+// ── IndexedDB (web + native migration source) ────────────────────
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -209,17 +221,29 @@ function warnLegacyMigration(userId: string): void {
   );
 }
 
-/** Promote a legacy Keychain key into the namespaced slot (native only). */
-async function promoteLegacySecureKey(
+/** Promote a recovered key into the namespaced Keychain slot (native only). */
+async function promoteToNamespacedKeychain(
   userId: string,
   base64: string,
+  options?: { clearLegacySecure?: boolean; clearLegacyIdb?: boolean },
 ): Promise<void> {
   const slot = storageKeyForUser(userId);
   await secureSave(slot, base64);
-  await secureRemove(LEGACY_SECURE_KEY);
+  if (options?.clearLegacySecure) {
+    await secureRemove(LEGACY_SECURE_KEY);
+  }
+  if (options?.clearLegacyIdb) {
+    await idbDelete(LEGACY_IDB_KEY);
+  }
+  // Best-effort: drop stranded IndexedDB copy after Keychain write succeeds.
+  await idbDelete(slot);
   warnLegacyMigration(userId);
 }
 
+/**
+ * Native load: Keychain first, then migrate from IndexedDB if a prior fallback
+ * / pre-namespacing copy exists. Does not treat IDB as an ongoing write backend.
+ */
 async function loadFromKeychain(userId: string): Promise<string | null> {
   const slot = storageKeyForUser(userId);
   const fromKeychain = await secureLoad(slot);
@@ -227,8 +251,39 @@ async function loadFromKeychain(userId: string): Promise<string | null> {
 
   const legacySecure = await secureLoad(LEGACY_SECURE_KEY);
   if (legacySecure) {
-    await promoteLegacySecureKey(userId, legacySecure);
+    await promoteToNamespacedKeychain(userId, legacySecure, {
+      clearLegacySecure: true,
+    });
     return legacySecure;
+  }
+
+  // Keys may live only in IndexedDB after the SecureStoragePlugin import
+  // regression that wrote to IDB while Keychain was unreachable.
+  const fromIdb = await idbLoad(slot);
+  if (fromIdb) {
+    try {
+      await promoteToNamespacedKeychain(userId, fromIdb);
+    } catch (err) {
+      console.error(
+        `[keystore] Failed to promote IndexedDB key to Keychain: ${errMessage(err)}`,
+      );
+      // Still return the key so encrypt/decrypt can proceed this session.
+    }
+    return fromIdb;
+  }
+
+  const legacyIdb = await idbLoad(LEGACY_IDB_KEY);
+  if (legacyIdb) {
+    try {
+      await promoteToNamespacedKeychain(userId, legacyIdb, {
+        clearLegacyIdb: true,
+      });
+    } catch (err) {
+      console.error(
+        `[keystore] Failed to promote legacy IndexedDB key to Keychain: ${errMessage(err)}`,
+      );
+    }
+    return legacyIdb;
   }
 
   return null;
@@ -285,8 +340,10 @@ export async function savePrivateKey(
   invalidatePrivateKeyCache();
 
   const slot = storageKeyForUser(userId);
+  const native = useNativeBackend();
+  logBackendOnce(native);
 
-  if (USE_NATIVE) {
+  if (native) {
     await secureSave(slot, base64);
   } else {
     try {
@@ -306,7 +363,7 @@ export async function savePrivateKey(
 /**
  * Load the private key for a specific account once per session.
  * Never falls back to another account's key.
- * Native uses Keychain only; web uses IndexedDB only.
+ * Successful loads are cached; misses are not (so a later restore/save is visible).
  */
 export async function loadPrivateKey(userId: string): Promise<string | null> {
   if (!userId) return null;
@@ -320,15 +377,19 @@ export async function loadPrivateKey(userId: string): Promise<string | null> {
 
   const versionAtStart = privateKeyCacheVersion;
   const slotUserId = userId;
+  const native = useNativeBackend();
+  logBackendOnce(native);
 
   const loadPromise: Promise<string | null> = (async () => {
-    if (USE_NATIVE) {
+    if (native) {
       return loadFromKeychain(slotUserId);
     }
     return loadFromIdbWithLegacy(slotUserId);
   })()
     .then((key) => {
-      if (privateKeyCacheVersion === versionAtStart) {
+      // Only cache positive hits. Caching null made post-restore / migration
+      // loads look like permanent "no key" for the rest of the session.
+      if (privateKeyCacheVersion === versionAtStart && key) {
         privateKeyCache = key;
         cacheUserId = slotUserId;
       }
@@ -377,10 +438,14 @@ export async function removePrivateKey(userId: string): Promise<void> {
   }
 
   const slot = storageKeyForUser(userId);
+  const native = useNativeBackend();
+  logBackendOnce(native);
 
-  if (USE_NATIVE) {
+  if (native) {
     await secureRemove(slot);
     await secureRemove(LEGACY_SECURE_KEY);
+    await idbDelete(slot);
+    await idbDelete(LEGACY_IDB_KEY);
     return;
   }
 

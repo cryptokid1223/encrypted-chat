@@ -150,6 +150,7 @@ function NewChatSheet({
       }
 
       if (existing) {
+        onInboxChanged?.();
         dismiss();
         router.push(`/chats/${existing.id}`);
         return;
@@ -170,6 +171,7 @@ function NewChatSheet({
           .maybeSingle();
 
         if (raced) {
+          onInboxChanged?.();
           dismiss();
           router.push(`/chats/${raced.id}`);
           return;
@@ -179,6 +181,7 @@ function NewChatSheet({
         return;
       }
 
+      onInboxChanged?.();
       dismiss();
       router.push(`/chats/${created.id}`);
     } catch {

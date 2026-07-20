@@ -427,9 +427,12 @@ export function ChatRoom() {
 
           const theirKey = theirPublicKeyRef.current;
           const myKey = myPrivateKeyRef.current;
-          if (!theirKey || !myKey) {
+          if (!myKey) {
             requireKeyImport();
             return;
+          }
+          if (!theirKey) {
+            throw new Error("Recipient public key missing");
           }
 
           // Encrypt before insert so we know the ciphertext/nonce for reconciliation.
