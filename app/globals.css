@@ -226,6 +226,15 @@ label {
   animation: msg-enter 150ms ease-out both;
 }
 
+.photo-reveal {
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+
+.photo-reveal.is-visible {
+  opacity: 1;
+}
+
 .skeleton-shimmer {
   background: linear-gradient(
     90deg,
@@ -247,6 +256,11 @@ label {
   .sheet-panel-enter,
   .msg-enter {
     animation: none;
+  }
+
+  .photo-reveal {
+    transition: none;
+    opacity: 1;
   }
 
   .skeleton-shimmer {

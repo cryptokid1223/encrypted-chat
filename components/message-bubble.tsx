@@ -1,14 +1,10 @@
 "use client";
 
 import { memo } from "react";
-import { InlineSpinner } from "@/components/inline-spinner";
-import { PhotoIcon } from "@/components/icons";
+import { AttachmentBubble } from "@/components/attachment-bubble";
 import { formatDayDivider, formatMessageTime } from "@/lib/chat";
 import type { AttachmentMeta } from "@/lib/fileCrypto";
-import {
-  attachmentDisplaySize,
-  parseMessageBody,
-} from "@/lib/messageContent";
+import { parseMessageBody } from "@/lib/messageContent";
 
 export type MessageBubbleProps = {
   id: string;
@@ -53,73 +49,6 @@ function bubbleRadiusClass(
     return "rounded-[18px] rounded-tl-[6px] rounded-bl-[6px]";
   }
   return "rounded-[18px] rounded-tl-[6px] rounded-bl-[6px]";
-}
-
-function AttachmentPlaceholder({
-  meta,
-  isMine,
-}: {
-  meta: AttachmentMeta;
-  isMine: boolean;
-}) {
-  const { width, height } = attachmentDisplaySize(meta.w ?? 200, meta.h ?? 200);
-
-  return (
-    <div
-      className={`flex items-center justify-center gap-[var(--sp-2)] ${
-        isMine
-          ? "bg-[var(--accent)] text-white"
-          : "bg-[var(--surface-elevated)] text-[var(--text-secondary)]"
-      }`}
-      style={{ width, height, minWidth: width, minHeight: height }}
-    >
-      <PhotoIcon className="h-6 w-6 shrink-0 opacity-80" />
-      <span className="text-[length:var(--text-secondary-size)] font-medium">
-        Photo
-      </span>
-    </div>
-  );
-}
-
-function AttachmentImage({
-  src,
-  meta,
-  isPending,
-  failed,
-  isMine,
-}: {
-  src: string;
-  meta: AttachmentMeta;
-  isPending?: boolean;
-  failed?: boolean;
-  isMine: boolean;
-}) {
-  const { width, height } = attachmentDisplaySize(meta.w ?? 200, meta.h ?? 200);
-
-  return (
-    <div
-      className="relative overflow-hidden"
-      style={{ width, height, minWidth: width, minHeight: height }}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={src}
-        alt=""
-        width={width}
-        height={height}
-        className={`block h-full w-full object-cover ${
-          isPending ? "opacity-60" : failed ? "opacity-50" : ""
-        }`}
-      />
-      {isPending ? (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/10">
-          <InlineSpinner
-            className={`h-5 w-5 ${isMine ? "text-white" : "text-[var(--text-primary)]"}`}
-          />
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 export const MessageBubble = memo(function MessageBubble({
@@ -193,17 +122,13 @@ export const MessageBubble = memo(function MessageBubble({
               }`}
               style={{ maxHeight: 320 }}
             >
-              {localPreviewUrl ? (
-                <AttachmentImage
-                  src={localPreviewUrl}
-                  meta={attachmentMeta}
-                  isPending={isPending}
-                  failed={failed}
-                  isMine={isMine}
-                />
-              ) : (
-                <AttachmentPlaceholder meta={attachmentMeta} isMine={isMine} />
-              )}
+              <AttachmentBubble
+                meta={attachmentMeta}
+                isMine={isMine}
+                localPreviewUrl={localPreviewUrl}
+                isPending={isPending}
+                failed={failed}
+              />
             </div>
           ) : (
             <div

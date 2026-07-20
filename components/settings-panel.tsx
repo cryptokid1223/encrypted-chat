@@ -22,6 +22,7 @@ import {
 import { useProfile } from "@/components/profile-context";
 import { Avatar } from "@/lib/avatars";
 import { invalidatePrivateKeyCache, loadPrivateKey } from "@/lib/keystore";
+import { revokeAllAttachmentUrls } from "@/lib/attachmentCache";
 import { createClient } from "@/lib/supabase/client";
 
 const APP_VERSION = "0.1.0";
@@ -121,6 +122,7 @@ export function SettingsPanel() {
       const supabase = createClient();
       await supabase.auth.signOut();
       invalidatePrivateKeyCache();
+      revokeAllAttachmentUrls();
       router.replace("/login");
       router.refresh();
     } catch {

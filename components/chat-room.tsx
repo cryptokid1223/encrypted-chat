@@ -23,6 +23,7 @@ import { hasPrivateKey, loadPrivateKey } from "@/lib/keystore";
 import { createClient } from "@/lib/supabase/client";
 import { MessageBubble } from "@/components/message-bubble";
 import { ChatComposer } from "@/components/chat-composer";
+import { PhotoViewerHostProvider } from "@/components/photo-viewer-host";
 import { useVisualViewport } from "@/hooks/useVisualViewport";
 import type {
   DecryptedMessage,
@@ -105,6 +106,7 @@ export function ChatRoom() {
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const photoViewerHostRef = useRef<HTMLDivElement>(null);
   const seenIdsRef = useRef(new Set<string>());
   const myUserIdRef = useRef<string | null>(null);
   const theirPublicKeyRef = useRef<string | null>(null);
@@ -619,7 +621,8 @@ export function ChatRoom() {
   const otherHasNickname = hasNickname(otherIdentity);
 
   return (
-    <div className="screen-enter flex h-app min-h-0 w-full min-w-0 flex-col overflow-x-hidden bg-[var(--bg)] md:h-full md:flex-1">
+    <PhotoViewerHostProvider hostRef={photoViewerHostRef}>
+    <div className="screen-enter relative flex h-app min-h-0 w-full min-w-0 flex-col overflow-x-hidden bg-[var(--bg)] md:h-full md:flex-1">
       <header className="safe-pt shrink-0 border-b border-[var(--divider)] bg-[var(--bg)]">
         <div className="flex h-[52px] items-center gap-[var(--sp-2)] px-[var(--sp-3)]">
           <Link
@@ -744,6 +747,11 @@ export function ChatRoom() {
           onClose={() => setContactDetailOpen(false)}
         />
       ) : null}
+      <div
+        ref={photoViewerHostRef}
+        className="pointer-events-none absolute inset-0 z-[60] [&>*]:pointer-events-auto"
+      />
     </div>
+    </PhotoViewerHostProvider>
   );
 }
