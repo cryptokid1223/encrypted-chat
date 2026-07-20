@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatComposer, type VoiceRecordingPayload } from "@/components/chat-composer";
 import { GroupAvatar } from "@/components/group-avatar";
+import { GroupInfo } from "@/components/group-info";
 import { ChevronLeftIcon } from "@/components/icons";
 import { useKeyGate } from "@/components/key-gate";
 import { MessageBubble } from "@/components/message-bubble";
@@ -15,6 +16,7 @@ import { uploadEncryptedAttachment } from "@/lib/attachmentStorage";
 import { isSameCalendarDay } from "@/lib/chat";
 import { encryptMessage } from "@/lib/crypto";
 import { displayName } from "@/lib/display-name";
+import { setGroupNotice } from "@/lib/groupNotice";
 import { encryptFile } from "@/lib/fileCrypto";
 import {
   decryptGroupMessageBatch,
@@ -94,6 +96,7 @@ function ChatHistorySkeleton() {
 export function GroupRoom() {
   const params = useParams<{ groupId: string }>();
   const groupId = params.groupId;
+  const router = useRouter();
   const { requireKeyImport } = useKeyGate();
   const { getNickname } = useNicknames();
 
@@ -104,6 +107,10 @@ export function GroupRoom() {
   const [memberCount, setMemberCount] = useState(0);
   const [members, setMembers] = useState<GroupMemberWithKey[]>([]);
   const [myUserId, setMyUserId] = useState<string | null>(null);
+  const [myJoinedAt, setMyJoinedAt] = useState<string | null>(null);
+  const [groupCreatedAt, setGroupCreatedAt] = useState<string | null>(null);
+  const [groupInfoOpen, setGroupInfoOpen] = useState(false);
+  const [membersRevision, setMembersRevision] = useState(0);
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [sending, setSending] = useState(false);
   const [attachUploading, setAttachUploading] = useState(false);
@@ -170,8 +177,6 @@ export function GroupRoom() {
     scrollToBottom();
   }, [messages, isNearBottom, scrollToBottom]);
 
-  useVisualViewport(scrollToBottom);
-
   const appendDecryptedMessage = useCallback((display: DisplayMessage) => {
     if (seenMessageUuidsRef.current.has(display.id)) {
       const pending = pendingByUuidRef.current.get(display.id);
@@ -203,6 +208,27 @@ export function GroupRoom() {
       return [...prev, display];
     });
   }, []);
+
+  const refreshMemberCache = useCallback(async () => {
+    const userId = myUserIdRef.current;
+    if (!userId) return;
+
+    const membersResult = await fetchGroupMembersWithKeys(groupId, userId);
+    if (!membersResult.ok) return;
+
+    const senderKeyMap = new Map<string, string>();
+    for (const member of membersResult.members) {
+      senderKeyMap.set(member.userId, member.publicKey);
+    }
+
+    membersRef.current = membersResult.members;
+    senderPublicKeyByUserIdRef.current = senderKeyMap;
+    setMembers(membersResult.members);
+    setMemberCount(membersResult.members.length);
+    setMembersRevision((v) => v + 1);
+  }, [groupId]);
+
+  useVisualViewport(scrollToBottom);
 
   useEffect(() => {
     let cancelled = false;
@@ -248,6 +274,19 @@ export function GroupRoom() {
           }
           return;
         }
+
+        const { data: myMembership } = await supabase
+          .from("group_members")
+          .select("joined_at")
+          .eq("group_id", groupId)
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        const { data: groupRow } = await supabase
+          .from("groups")
+          .select("created_at")
+          .eq("id", groupId)
+          .maybeSingle();
 
         const membersResult = await fetchGroupMembersWithKeys(groupId, user.id);
         if (!membersResult.ok) {
@@ -304,6 +343,8 @@ export function GroupRoom() {
         setName(shell.name);
         setAvatarId(shell.avatarId);
         setMemberCount(shell.memberCount);
+        setMyJoinedAt((myMembership?.joined_at as string | undefined) ?? null);
+        setGroupCreatedAt((groupRow?.created_at as string | undefined) ?? null);
         setMessages(
           decrypted.map((m) => ({
             id: m.id,
@@ -390,6 +431,90 @@ export function GroupRoom() {
       }
     };
   }, [groupId, requireKeyImport, appendDecryptedMessage]);
+
+  useEffect(() => {
+    if (status !== "ready") return;
+
+    const supabase = createClient();
+    const userId = myUserIdRef.current;
+    if (!userId) return;
+
+    let cancelled = false;
+
+    const channel = supabase
+      .channel(`group-membership:${groupId}:${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "group_members",
+          filter: `group_id=eq.${groupId}`,
+        },
+        () => {
+          if (cancelled) return;
+          void refreshMemberCache();
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "group_members",
+          filter: `group_id=eq.${groupId}`,
+        },
+        () => {
+          if (cancelled) return;
+          void refreshMemberCache();
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "group_members",
+          filter: `group_id=eq.${groupId}`,
+        },
+        (payload) => {
+          if (cancelled) return;
+          const old = payload.old as { user_id?: string; group_id?: string };
+          if (old.user_id === userId) {
+            setGroupNotice("You're no longer in this group.");
+            router.push("/chats");
+            return;
+          }
+          void refreshMemberCache();
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "groups",
+          filter: `id=eq.${groupId}`,
+        },
+        (payload) => {
+          if (cancelled) return;
+          const updated = payload.new as {
+            name?: string;
+            avatar?: string | null;
+          };
+          if (updated.name) setName(updated.name);
+          if ("avatar" in updated) {
+            setAvatarId((updated.avatar as string | null) ?? null);
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [status, groupId, refreshMemberCache, router]);
 
   const sendGroupMessage = useCallback(
     (
@@ -929,6 +1054,11 @@ export function GroupRoom() {
   const memberLabel =
     memberCount === 1 ? "1 member" : `${memberCount} members`;
 
+  const showJoinPill =
+    Boolean(myJoinedAt && groupCreatedAt && messages.length > 0) &&
+    new Date(myJoinedAt!).getTime() >
+      new Date(groupCreatedAt!).getTime() + 1000;
+
   return (
     <PhotoViewerHostProvider hostRef={photoViewerHostRef}>
       <div className="screen-enter relative flex h-app min-h-0 w-full min-w-0 flex-col overflow-x-hidden bg-[var(--bg)] md:h-full md:flex-1">
@@ -941,7 +1071,11 @@ export function GroupRoom() {
             >
               <ChevronLeftIcon className="h-5 w-5" />
             </Link>
-            <div className="flex min-h-11 min-w-0 flex-1 items-center gap-[var(--sp-2)]">
+            <button
+              type="button"
+              onClick={() => setGroupInfoOpen(true)}
+              className="row-press flex min-h-11 min-w-0 flex-1 items-center gap-[var(--sp-2)] rounded-[var(--radius-input)] text-left"
+            >
               <GroupAvatar avatarId={avatarId} size={32} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[length:var(--text-title)] font-semibold leading-tight text-[var(--text-primary)]">
@@ -951,7 +1085,7 @@ export function GroupRoom() {
                   {memberLabel}
                 </p>
               </div>
-            </div>
+            </button>
           </div>
         </header>
 
@@ -976,6 +1110,18 @@ export function GroupRoom() {
               </div>
             ) : (
               <ul className="flex flex-col">
+                {showJoinPill ? (
+                  <li>
+                    <div
+                      className="flex justify-center"
+                      style={{ margin: "var(--sp-4) 0" }}
+                    >
+                      <span className="rounded-[10px] bg-[var(--surface)] px-[10px] py-1 text-[length:var(--text-caption)] text-[var(--text-secondary)]">
+                        Messages before you joined aren&apos;t visible.
+                      </span>
+                    </div>
+                  </li>
+                ) : null}
                 {messages.map((m, i) => {
                   const mine = m.senderId === myUserId;
                   const prev = messages[i - 1];
@@ -1051,9 +1197,26 @@ export function GroupRoom() {
           onVoiceSend={handleVoiceSend}
           disabled={sending}
           attachDisabled={attachUploading}
-          attachError={attachError}
+        attachError={attachError}
+      />
+
+      {groupInfoOpen && myUserId ? (
+        <GroupInfo
+          groupId={groupId}
+          myUserId={myUserId}
+          onClose={() => setGroupInfoOpen(false)}
+          onMembershipChanged={() => void refreshMemberCache()}
+          onGroupUpdated={(patch) => {
+            if (patch.name !== undefined) setName(patch.name);
+            if (patch.avatarId !== undefined) setAvatarId(patch.avatarId);
+          }}
+          onLeftGroup={() => {
+            setGroupInfoOpen(false);
+          }}
+          membersRevision={membersRevision}
         />
-      </div>
+      ) : null}
+    </div>
     </PhotoViewerHostProvider>
   );
 }

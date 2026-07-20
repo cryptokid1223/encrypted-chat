@@ -12,7 +12,8 @@ import { fetchConversationPreview, previewFromMessageRow } from "@/lib/conversat
 import { contactMatchesQuery, displayName } from "@/lib/display-name";
 import { hasPrivateKey, loadPrivateKey } from "@/lib/keystore";
 import type { EncryptedMessageRow } from "@/lib/message-decrypt";
-import { fetchMyGroups, type GroupRow } from "@/lib/groups";
+import { fetchMyGroups, fetchGroupForInbox, type GroupRow } from "@/lib/groups";
+import { consumeGroupNotice } from "@/lib/groupNotice";
 import {
   fetchGroupPreview,
   previewFromGroupMessageRow,
@@ -68,6 +69,13 @@ type GroupMessageInsert = {
   ciphertext: string;
   nonce: string;
   created_at: string;
+};
+
+type GroupMemberInsert = {
+  group_id: string;
+  user_id: string;
+  role: string;
+  joined_at: string;
 };
 
 function sortDmByActivity(rows: ConversationRow[]): ConversationRow[] {
@@ -237,6 +245,7 @@ export function ChatList({
   const [searchQuery, setSearchQuery] = useState("");
   const [myUserId, setMyUserId] = useState<string | null>(null);
   const [listScrolled, setListScrolled] = useState(false);
+  const [groupNotice, setGroupNotice] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const conversationsRef = useRef(conversations);
@@ -328,6 +337,15 @@ export function ChatList({
       );
     });
   }, [inboxItems, nicknames, searchQuery]);
+
+  useEffect(() => {
+    const notice = consumeGroupNotice();
+    if (notice) {
+      setGroupNotice(notice);
+      const timer = setTimeout(() => setGroupNotice(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -727,6 +745,78 @@ export function ChatList({
             })();
           },
         )
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "group_members",
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            const row = payload.new as GroupMemberInsert;
+            if (!row?.group_id) return;
+
+            if (groupsRef.current.some((g) => g.id === row.group_id)) {
+              return;
+            }
+
+            void (async () => {
+              const group = await fetchGroupForInbox(row.group_id, user.id);
+              if (!group) return;
+
+              setGroups((prev) => {
+                if (prev.some((g) => g.id === group.id)) return prev;
+                return sortGroupsByActivity([
+                  {
+                    ...group,
+                    lastActivity: group.createdAt,
+                    lastPreview: "No messages yet",
+                  },
+                  ...prev,
+                ]);
+              });
+            })();
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "DELETE",
+            schema: "public",
+            table: "group_members",
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            const row = payload.old as GroupMemberInsert;
+            if (!row?.group_id) return;
+            setGroups((prev) => prev.filter((g) => g.id !== row.group_id));
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "groups",
+          },
+          (payload) => {
+            const row = payload.new as {
+              id: string;
+              name: string;
+              avatar: string | null;
+            };
+            if (!row?.id) return;
+            if (!groupsRef.current.some((g) => g.id === row.id)) return;
+            setGroups((prev) =>
+              prev.map((g) =>
+                g.id === row.id
+                  ? { ...g, name: row.name, avatarId: row.avatar }
+                  : g,
+              ),
+            );
+          },
+        )
         .subscribe();
     }
 
@@ -778,6 +868,14 @@ export function ChatList({
           </div>
         </div>
       </header>
+
+      {groupNotice ? (
+        <div className="shrink-0 border-b border-[var(--divider)] bg-[var(--surface)] px-[var(--sp-4)] py-[var(--sp-2)]">
+          <p className="text-center text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]">
+            {groupNotice}
+          </p>
+        </div>
+      ) : null}
 
       {!showLoading && inboxItems.length > 0 ? (
         <div className="shrink-0 px-[var(--sp-4)] py-[var(--sp-2)]">
