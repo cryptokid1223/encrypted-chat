@@ -12,6 +12,7 @@ import {
   PencilIcon,
   PersonIcon,
   QrCodeIcon,
+  SparkleIcon,
 } from "@/components/icons";
 import { KeyTransferModal } from "@/components/key-transfer-modal";
 import {
@@ -198,34 +199,41 @@ export function SettingsPanel() {
 
       <div className="safe-pb min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-xl px-[var(--sp-4)] pb-[var(--sp-6)] sm:px-[var(--sp-6)]">
-          <div className="flex flex-col items-center pt-[var(--sp-6)]">
+          <div className="flex flex-col items-center pt-6">
             <button
               type="button"
               aria-label="Edit avatar"
               onClick={() => setEditingAvatar(true)}
-              className="pressable relative flex h-[88px] w-[88px] items-center justify-center"
+              className="pressable relative flex h-[72px] w-[72px] items-center justify-center"
             >
-              <Avatar avatarId={avatarId} size={88} />
-              <span className="absolute -bottom-0.5 -right-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent)] text-white ring-2 ring-[var(--bg)]">
-                <PencilIcon className="h-3.5 w-3.5" />
+              <Avatar avatarId={avatarId} size={72} />
+              <span className="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--accent)] text-white ring-2 ring-[var(--bg)]">
+                <PencilIcon className="h-3 w-3" />
               </span>
             </button>
-            {displayUsername ? (
-              <p className="mt-[var(--sp-3)] text-[length:var(--text-title-lg)] font-bold leading-tight text-[var(--text-primary)]">
-                {displayUsername}
-              </p>
+            {username ? (
+              <>
+                <p className="mt-3 text-[20px] font-semibold leading-tight text-[var(--text-primary)]">
+                  {username}
+                </p>
+                <p className="mt-1 text-[14px] text-[var(--text-secondary)]">
+                  {displayUsername}
+                </p>
+              </>
             ) : null}
           </div>
 
           <SettingsSection title="Account">
             <SettingsRow
               icon={<PersonIcon />}
+              iconTint="var(--settings-tint-blue)"
               label="Username"
               value={displayUsername || "—"}
               isLast={false}
             />
             <SettingsRow
               icon={<KeyIcon />}
+              iconTint="var(--settings-tint-orange)"
               label="Key backup"
               chevron
               onClick={handleKeyBackup}
@@ -233,26 +241,17 @@ export function SettingsPanel() {
             />
             <SettingsRow
               icon={<QrCodeIcon />}
+              iconTint="var(--settings-tint-teal)"
               label="Transfer key"
               chevron
               onClick={() => setTransferOpen(true)}
-              isLast={false}
-            />
-            <SettingsRow
-              label="Remove key from this device"
-              destructive
-              onClick={() => setRemoveKeyOpen(true)}
               isLast
             />
           </SettingsSection>
-          <p className="mt-[var(--sp-2)] px-[var(--sp-4)] text-[length:var(--text-caption)] leading-[1.4] text-[var(--text-secondary)]">
-            Usually not needed — logging in with your password restores your
-            messages.
-          </p>
 
           {backupMessage ? (
             <p
-              className="mt-[var(--sp-2)] text-center text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]"
+              className="mt-2 text-center text-[14px] text-[var(--text-secondary)]"
               role="status"
             >
               {backupMessage}
@@ -260,7 +259,7 @@ export function SettingsPanel() {
           ) : null}
           {backupError ? (
             <p
-              className="mt-[var(--sp-2)] text-center text-[length:var(--text-secondary-size)] text-[var(--destructive)]"
+              className="mt-2 text-center text-[14px] text-[var(--danger)]"
               role="alert"
             >
               {backupError}
@@ -270,14 +269,20 @@ export function SettingsPanel() {
           <SettingsSection title="Appearance">
             <SettingsRow
               icon={<MoonIcon />}
+              iconTint="var(--settings-tint-indigo)"
               label="Theme"
               value="Dark"
               isLast
             />
           </SettingsSection>
 
-          <SettingsSection title="Message assistant">
+          <SettingsSection
+            title="Message assistant"
+            footer="Rewrites drafts you choose using OpenAI. Sent messages stay end-to-end encrypted."
+          >
             <SettingsToggleRow
+              icon={<SparkleIcon />}
+              iconTint="var(--settings-tint-purple)"
               label="Message assistant"
               checked={aiAssistEnabled}
               onChange={(next) => {
@@ -288,21 +293,24 @@ export function SettingsPanel() {
               isLast
             />
           </SettingsSection>
-          <p className="mt-[var(--sp-2)] px-[var(--sp-4)] text-[length:var(--text-caption)] leading-[1.4] text-[var(--text-secondary)]">
-            Rewrites drafts you choose using OpenAI. Sent messages stay end-to-end
-            encrypted.
-          </p>
 
           <SettingsSection title="About">
             <SettingsRow
               icon={<InfoIcon />}
+              iconTint="var(--settings-tint-gray)"
               label="Version"
               value={APP_VERSION}
               isLast
             />
           </SettingsSection>
 
-          <div className="mt-[var(--sp-6)] overflow-hidden rounded-[var(--radius-card)] bg-[var(--surface)]">
+          <SettingsSection footer="Usually not needed — logging in with your password restores your messages.">
+            <SettingsRow
+              label="Remove key from this device"
+              destructive
+              onClick={() => setRemoveKeyOpen(true)}
+              isLast={false}
+            />
             <SettingsRow
               label="Log out"
               destructive
@@ -310,7 +318,7 @@ export function SettingsPanel() {
               disabled={loggingOut}
               isLast
             />
-          </div>
+          </SettingsSection>
         </div>
       </div>
 
@@ -326,23 +334,23 @@ export function SettingsPanel() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="avatar-picker-title"
-            className="sheet-panel-enter safe-pb relative z-10 w-full max-w-md rounded-t-[var(--radius-sheet)] bg-[var(--surface-elevated)] sm:rounded-[var(--radius-sheet)]"
+            className="sheet-panel-enter safe-pb relative z-10 w-full max-w-md rounded-t-[var(--radius-sheet)] bg-[var(--surface)] sm:rounded-[var(--settings-card-radius)]"
           >
-            <div className="flex justify-center pt-[var(--sp-2)]">
+            <div className="flex justify-center pt-2">
               <div className="h-1 w-9 rounded-full bg-[var(--divider)]" />
             </div>
-            <div className="px-[var(--sp-4)] pt-[var(--sp-3)]">
+            <div className="px-4 pt-3">
               <p
                 id="avatar-picker-title"
-                className="text-[length:var(--text-title)] font-semibold text-[var(--text-primary)]"
+                className="text-[17px] font-semibold text-[var(--text-primary)]"
               >
                 Choose an avatar
               </p>
-              <p className="mt-[var(--sp-1)] text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]">
+              <p className="mt-1 text-[14px] text-[var(--text-secondary)]">
                 Pick one of 12 preset avatars
               </p>
             </div>
-            <div className="p-[var(--sp-4)]">
+            <div className="p-4">
               <AvatarPicker
                 value={avatarId}
                 onChange={updateAvatar}
@@ -352,14 +360,14 @@ export function SettingsPanel() {
               />
             </div>
             {avatarSaving ? (
-              <p className="px-[var(--sp-4)] pb-[var(--sp-2)] text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]">
+              <p className="px-4 pb-2 text-[14px] text-[var(--text-secondary)]">
                 Saving…
               </p>
             ) : null}
             <button
               type="button"
               onClick={() => setEditingAvatar(false)}
-              className="pressable flex min-h-11 w-full items-center justify-center text-[length:var(--text-body)] text-[var(--text-primary)]"
+              className="pressable flex min-h-11 w-full items-center justify-center text-[16px] text-[var(--text-primary)]"
             >
               Cancel
             </button>

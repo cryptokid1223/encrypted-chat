@@ -59,9 +59,9 @@ function GroupNameSheet({
       <div
         role="dialog"
         aria-modal="true"
-        className="sheet-panel-enter safe-pb relative w-full rounded-t-[var(--radius-sheet)] bg-[var(--surface-elevated)] p-[var(--sp-5)]"
+        className="sheet-panel-enter safe-pb relative w-full rounded-t-[var(--radius-sheet)] bg-[var(--surface)] p-5"
       >
-        <p className="text-[length:var(--text-title)] font-semibold text-[var(--text-primary)]">
+        <p className="text-[17px] font-semibold text-[var(--text-primary)]">
           Group name
         </p>
         <input
@@ -69,18 +69,18 @@ function GroupNameSheet({
           onChange={(e) => setValue(e.target.value.slice(0, 40))}
           maxLength={40}
           autoComplete="off"
-          className="mt-[var(--sp-4)] h-12 w-full rounded-[var(--radius-input)] border border-[var(--divider)] bg-[var(--surface)] px-[var(--sp-4)] text-[16px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+          className="mt-4 h-[52px] w-full rounded-[12px] border border-[var(--auth-input-border)] bg-[var(--surface-elevated)] px-4 text-[16px] text-[var(--text-primary)] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[var(--accent)]"
         />
         {error ? (
-          <p className="mt-[var(--sp-2)] text-[length:var(--text-secondary-size)] text-[var(--destructive)]">
+          <p className="mt-2 text-[13px] text-[var(--danger)]">
             {error}
           </p>
         ) : null}
-        <div className="mt-[var(--sp-4)] flex gap-[var(--sp-2)]">
+        <div className="mt-4 flex gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="pressable flex min-h-11 flex-1 items-center justify-center rounded-[var(--radius-input)] text-[length:var(--text-body)] font-medium text-[var(--text-primary)]"
+            className="pressable flex min-h-11 flex-1 items-center justify-center rounded-[12px] text-[16px] font-medium text-[var(--text-primary)]"
           >
             Cancel
           </button>
@@ -101,7 +101,7 @@ function GroupNameSheet({
                 }
               })();
             }}
-            className="pressable flex min-h-11 flex-1 items-center justify-center rounded-[var(--radius-input)] bg-[var(--accent)] text-[length:var(--text-body)] font-semibold text-white disabled:opacity-40"
+            className="pressable flex min-h-11 flex-1 items-center justify-center rounded-[12px] bg-[var(--accent)] text-[16px] font-semibold text-white disabled:opacity-40"
           >
             Save
           </button>
@@ -414,6 +414,7 @@ export function GroupInfo({
                 {isAdmin ? (
                   <SettingsRow
                     icon={<PersonPlusIcon />}
+                    iconTint="var(--settings-tint-green)"
                     label="Add members"
                     value={
                       slotsLeft > 0
@@ -486,14 +487,14 @@ export function GroupInfo({
                 })}
               </SettingsSection>
 
-              <div className="mt-[var(--sp-6)] overflow-hidden rounded-[var(--radius-card)] bg-[var(--surface)]">
+              <SettingsSection>
                 <SettingsRow
                   label="Leave group"
                   destructive
                   onClick={() => setLeaveOpen(true)}
                   isLast
                 />
-              </div>
+              </SettingsSection>
 
               {error ? (
                 <p

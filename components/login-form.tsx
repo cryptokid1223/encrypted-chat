@@ -6,6 +6,7 @@ import {
   AuthBrandHeader,
   AuthFooterLink,
   AuthPrimaryButton,
+  AuthRestoringScreen,
   AuthScreenHeading,
   AuthTextField,
 } from "@/components/auth-ui";
@@ -23,7 +24,7 @@ export function LoginForm() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [usernameError, setUsernameError] = useState<string | null>(null);
-  const [generalError, setGeneralError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -32,7 +33,7 @@ export function LoginForm() {
     e.preventDefault();
     blurActiveElement();
     setUsernameError(null);
-    setGeneralError(null);
+    setPasswordError(null);
 
     const validationError = validateUsername(username);
     if (validationError) {
@@ -50,7 +51,7 @@ export function LoginForm() {
         });
 
       if (signInError || !signInData.user) {
-        setGeneralError("Invalid username or password.");
+        setPasswordError("Invalid username or password.");
         return;
       }
 
@@ -67,10 +68,14 @@ export function LoginForm() {
       router.refresh();
     } catch {
       setRestoring(false);
-      setGeneralError("Something went wrong. Try again.");
+      setPasswordError("Something went wrong. Try again.");
     } finally {
       setBusy(false);
     }
+  }
+
+  if (restoring) {
+    return <AuthRestoringScreen />;
   }
 
   return (
@@ -78,7 +83,7 @@ export function LoginForm() {
       <AuthBrandHeader subtitle="Private messaging. End-to-end encrypted." />
       <AuthScreenHeading title="Log in" />
 
-      <div className="mt-[var(--sp-6)] space-y-[var(--sp-4)]">
+      <div className="mt-[var(--sp-6)] flex flex-col gap-3">
         <AuthTextField
           id="username"
           name="username"
@@ -109,30 +114,19 @@ export function LoginForm() {
           enterKeyHint="go"
           inputRef={passwordRef}
           value={password}
-          onChange={setPassword}
+          onChange={(value) => {
+            setPassword(value);
+            if (passwordError) setPasswordError(null);
+          }}
+          error={passwordError}
           required
         />
       </div>
 
       <div className="mt-[var(--sp-6)]">
         <AuthPrimaryButton disabled={busy} loading={busy}>
-          {restoring
-            ? "Restoring your messages…"
-            : busy
-              ? "Logging in…"
-              : "Log in"}
+          Log in
         </AuthPrimaryButton>
-        {generalError ? (
-          <p
-            className="mt-[var(--sp-2)] text-center text-[length:var(--text-secondary-size)] text-[var(--destructive)]"
-            role="alert"
-          >
-            {generalError}
-          </p>
-        ) : null}
-      </div>
-
-      <div className="mt-[var(--sp-4)]">
         <AuthFooterLink
           text="New to Celesth?"
           linkText="Create account"

@@ -23,38 +23,75 @@ export type MessageBubbleProps = {
     "kind" | "w" | "h" | "durationMs"
   >;
   senderLabel?: string;
+  senderId?: string;
   decryptFailed?: boolean;
   onRetry?: (id: string) => void;
 };
 
-function bubbleRadiusClass(
-  isMine: boolean,
-  isFirstInGroup: boolean,
-  isLastInGroup: boolean,
-): string {
-  if (isMine) {
-    if (isFirstInGroup && isLastInGroup) {
-      return "rounded-[18px] rounded-br-[6px]";
-    }
-    if (isFirstInGroup) {
-      return "rounded-[18px] rounded-br-[6px]";
-    }
-    if (isLastInGroup) {
-      return "rounded-[18px] rounded-tr-[6px] rounded-br-[6px]";
-    }
-    return "rounded-[18px] rounded-tr-[6px] rounded-br-[6px]";
-  }
+const SENDER_COLOR_VARS = [
+  "var(--sender-1)",
+  "var(--sender-2)",
+  "var(--sender-3)",
+  "var(--sender-4)",
+  "var(--sender-5)",
+  "var(--sender-6)",
+] as const;
 
-  if (isFirstInGroup && isLastInGroup) {
-    return "rounded-[18px] rounded-bl-[6px]";
+function senderColorFromId(userId: string): string {
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) {
+    hash = (hash * 31 + userId.charCodeAt(i)) >>> 0;
   }
-  if (isFirstInGroup) {
-    return "rounded-[18px] rounded-bl-[6px]";
+  return SENDER_COLOR_VARS[hash % SENDER_COLOR_VARS.length];
+}
+
+/** Signal-style: 18px all corners; 6px only on the last bubble's near-sender corner. */
+function bubbleRadiusClass(isMine: boolean, isLastInGroup: boolean): string {
+  if (!isLastInGroup) return "rounded-[18px]";
+  return isMine
+    ? "rounded-[18px] rounded-br-[6px]"
+    : "rounded-[18px] rounded-bl-[6px]";
+}
+
+function DatePill({ label }: { label: string }) {
+  return (
+    <div className="flex justify-center" style={{ margin: "16px 0" }}>
+      <span className="rounded-[12px] bg-[var(--surface)] px-3 py-1 text-[12px] leading-none text-[var(--text-secondary)]">
+        {label}
+      </span>
+    </div>
+  );
+}
+
+function BubbleTimestamp({
+  timestamp,
+  isMine,
+  overlay,
+}: {
+  timestamp: string;
+  isMine: boolean;
+  overlay?: boolean;
+}) {
+  const time = formatMessageTime(timestamp);
+  if (overlay) {
+    return (
+      <span
+        className="pointer-events-none absolute bottom-[6px] right-[8px] rounded-[6px] bg-black/45 px-[5px] py-[2px] text-[11px] leading-none text-white/90"
+        aria-hidden
+      >
+        {time}
+      </span>
+    );
   }
-  if (isLastInGroup) {
-    return "rounded-[18px] rounded-tl-[6px] rounded-bl-[6px]";
-  }
-  return "rounded-[18px] rounded-tl-[6px] rounded-bl-[6px]";
+  return (
+    <span
+      className={`relative top-[3px] float-right ml-2 whitespace-nowrap text-[11px] leading-[1.35] opacity-[0.65] ${
+        isMine ? "text-white" : "text-[var(--text-primary)]"
+      }`}
+    >
+      {time}
+    </span>
+  );
 }
 
 export const MessageBubble = memo(function MessageBubble({
@@ -71,11 +108,12 @@ export const MessageBubble = memo(function MessageBubble({
   localPreviewUrl,
   pendingAttachment,
   senderLabel,
+  senderId,
   decryptFailed,
   onRetry,
 }: MessageBubbleProps) {
-  const radiusClass = bubbleRadiusClass(isMine, isFirstInGroup, isLastInGroup);
-  const groupGap = isFirstInGroup ? "var(--sp-3)" : "2px";
+  const radiusClass = bubbleRadiusClass(isMine, isLastInGroup);
+  const groupGap = isFirstInGroup ? "10px" : "2px";
   const parsed = parseMessageBody(body);
   const isAttachment =
     parsed.type === "attachment" ||
@@ -112,45 +150,49 @@ export const MessageBubble = memo(function MessageBubble({
 
   const bubbleClass = isMine
     ? failed
-      ? "bg-[var(--accent)]/60 text-white"
-      : "bg-[var(--accent)] text-white"
-    : "bg-[var(--surface-elevated)] text-[var(--text-primary)]";
+      ? "bg-[var(--bubble-out-failed)] text-white"
+      : "bg-[var(--bubble-out)] text-white"
+    : "bg-[var(--surface)] text-[var(--text-primary)]";
+
+  const showTime = isLastInGroup && !failed;
+  const isVisualMedia =
+    attachmentMeta?.kind === "image" || attachmentMeta?.kind === "video";
 
   return (
     <>
       {showDayDivider ? (
-        <div
-          className="flex justify-center"
-          style={{ margin: "var(--sp-4) 0" }}
-        >
-          <span className="rounded-[10px] bg-[var(--surface)] px-[10px] py-1 text-[length:var(--text-caption)] text-[var(--text-secondary)]">
-            {formatDayDivider(timestamp)}
-          </span>
-        </div>
+        <DatePill label={formatDayDivider(timestamp)} />
       ) : null}
       <div
         className={`flex flex-col ${isMine ? "items-end" : "items-start"}${animateIn ? " msg-enter" : ""}`}
         style={{ marginTop: showDayDivider ? 0 : groupGap }}
       >
         <div
-          className={`flex max-w-[75%] flex-col gap-[var(--sp-1)] ${
+          className={`flex max-w-[75%] flex-col ${
             isMine ? "items-end" : "items-start"
           }`}
         >
           {senderLabel && !isMine && isFirstInGroup ? (
-            <span className="px-[var(--sp-1)] text-[length:var(--text-caption)] text-[var(--text-secondary)]">
+            <span
+              className="mb-0.5 px-[2px] text-[13px] font-semibold leading-tight"
+              style={{
+                color: senderId
+                  ? senderColorFromId(senderId)
+                  : "var(--text-secondary)",
+              }}
+            >
               {senderLabel}
             </span>
           ) : null}
           {decryptFailed ? (
             <div
-              className={`px-3 py-2 text-[length:var(--text-body)] leading-[1.35] ${radiusClass} bg-[var(--surface-elevated)] text-[var(--text-secondary)]`}
+              className={`px-[14px] py-[10px] text-[15px] leading-[1.35] ${radiusClass} bg-[var(--surface)] text-[var(--text-secondary)]`}
             >
               Couldn&apos;t decrypt message
             </div>
           ) : isAttachment && attachmentMeta ? (
             <div
-              className={`overflow-hidden ${radiusClass} ${bubbleClass} ${
+              className={`relative overflow-hidden ${radiusClass} ${bubbleClass} ${
                 isPending && !localPreviewUrl && attachmentMeta.kind !== "audio"
                   ? "opacity-70"
                   : ""
@@ -166,36 +208,58 @@ export const MessageBubble = memo(function MessageBubble({
                 isPending={isPending}
                 failed={failed}
               />
+              {showTime && isVisualMedia ? (
+                <BubbleTimestamp
+                  timestamp={timestamp}
+                  isMine={isMine}
+                  overlay
+                />
+              ) : null}
+              {showTime && attachmentMeta.kind === "audio" ? (
+                <div className="flex justify-end px-[14px] pb-[8px]">
+                  <span
+                    className={`text-[11px] leading-none opacity-[0.65] ${
+                      isMine ? "text-white" : "text-[var(--text-primary)]"
+                    }`}
+                  >
+                    {formatMessageTime(timestamp)}
+                  </span>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div
-              className={`px-3 py-2 text-[length:var(--text-body)] leading-[1.35] break-words whitespace-pre-wrap ${radiusClass} ${bubbleClass} ${
+              className={`px-[14px] py-[10px] text-[15px] leading-[1.35] break-words whitespace-pre-wrap ${radiusClass} ${bubbleClass} ${
                 isPending ? "opacity-70" : ""
               }`}
             >
               {parsed.type === "text" ? parsed.text : body}
+              {showTime ? (
+                <BubbleTimestamp timestamp={timestamp} isMine={isMine} />
+              ) : null}
             </div>
           )}
           {failed && onRetry ? (
             <button
               type="button"
               onClick={() => onRetry(id)}
-              className="pressable text-[length:var(--text-caption)] font-medium text-[var(--destructive)]"
+              className="pressable mt-1 text-[12px] font-medium text-[var(--destructive)]"
             >
               Failed — tap to retry
             </button>
           ) : null}
         </div>
-        {isLastInGroup ? (
-          <span
-            className={`mt-[var(--sp-1)] px-[var(--sp-1)] text-[length:var(--text-caption)] text-[var(--text-secondary)] ${
-              isMine ? "text-right" : "text-left"
-            }`}
-          >
-            {formatMessageTime(timestamp)}
-          </span>
-        ) : null}
       </div>
     </>
   );
 });
+
+export function SystemPill({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex justify-center" style={{ margin: "16px 0" }}>
+      <span className="rounded-[12px] bg-[var(--surface)] px-3 py-1 text-[12px] leading-none text-[var(--text-secondary)]">
+        {children}
+      </span>
+    </div>
+  );
+}

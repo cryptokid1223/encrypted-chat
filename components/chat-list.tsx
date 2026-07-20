@@ -4,10 +4,9 @@ import Link from "next/link";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NewChatModal } from "@/components/new-chat-modal";
 import { GroupAvatar } from "@/components/group-avatar";
-import { PencilIcon, SearchIcon } from "@/components/icons";
+import { PencilIcon, PeopleIcon, SearchIcon } from "@/components/icons";
 import { useNicknames } from "@/components/nicknames-context";
 import { useProfile } from "@/components/profile-context";
-import { formatListTime } from "@/lib/chat";
 import { fetchConversationPreview, previewFromMessageRow } from "@/lib/conversationPreview";
 import { contactMatchesQuery, displayName } from "@/lib/display-name";
 import { hasPrivateKey, loadPrivateKey } from "@/lib/keystore";
@@ -20,9 +19,14 @@ import {
   previewFromGroupMessageRow,
   type GroupMessageRow,
 } from "@/lib/groupMessages";
-import { Avatar, AVATARS } from "@/lib/avatars";
+import { Avatar } from "@/lib/avatars";
 import { createClient } from "@/lib/supabase/client";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
+import {
+  fetchUnreadCounts,
+  unreadCountMapFromRows,
+  unreadMapKey,
+} from "@/lib/readState";
 
 type ConversationRow = {
   id: string;
@@ -32,11 +36,16 @@ type ConversationRow = {
   otherPublicKey: string;
   lastActivity: string;
   lastPreview: string;
+  lastSenderId: string | null;
+  unreadCount: number;
 };
 
 type GroupListRow = GroupRow & {
   lastActivity: string;
   lastPreview: string;
+  lastSenderId: string | null;
+  lastSenderUsername: string | null;
+  unreadCount: number;
 };
 
 function sortGroupsByActivity(rows: GroupListRow[]): GroupListRow[] {
@@ -104,6 +113,8 @@ type InboxItem =
       otherPublicKey: string;
       lastActivity: string;
       lastPreview: string;
+      lastSenderId: string | null;
+      unreadCount: number;
     }
   | {
       kind: "group";
@@ -113,7 +124,86 @@ type InboxItem =
       memberCount: number;
       lastActivity: string;
       lastPreview: string;
+      lastSenderId: string | null;
+      lastSenderUsername: string | null;
+      unreadCount: number;
     };
+
+/** Inbox timestamp: time today, weekday within 7 days, else locale date. */
+function formatInboxTimestamp(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const startToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
+    const startMsg = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const diffDays = Math.round(
+      (startToday.getTime() - startMsg.getTime()) / (24 * 60 * 60 * 1000),
+    );
+    if (diffDays === 0) {
+      return d.toLocaleTimeString(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    }
+    if (diffDays > 0 && diffDays < 7) {
+      return d.toLocaleDateString(undefined, { weekday: "short" });
+    }
+    return d.toLocaleDateString(undefined, {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+    });
+  } catch {
+    return "";
+  }
+}
+
+function previewFirstName(label: string): string {
+  const trimmed = label.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("@")) return trimmed.slice(1) || trimmed;
+  return trimmed.split(/\s+/)[0] || trimmed;
+}
+
+function formatInboxPreviewLine({
+  preview,
+  myUserId,
+  lastSenderId,
+  isGroup,
+  senderLabel,
+}: {
+  preview: string;
+  myUserId: string | null;
+  lastSenderId: string | null;
+  isGroup: boolean;
+  senderLabel?: string | null;
+}): string {
+  if (!preview || preview === "No messages yet") return preview;
+  if (lastSenderId && myUserId && lastSenderId === myUserId) {
+    return `You: ${preview}`;
+  }
+  if (isGroup && lastSenderId && senderLabel) {
+    return `${previewFirstName(senderLabel)}: ${preview}`;
+  }
+  return preview;
+}
+
+function UnreadBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  const label = count > 99 ? "99+" : String(count);
+  return (
+    <span
+      className="inline-flex h-[var(--unread-badge-size)] min-w-[var(--unread-badge-size)] items-center justify-center rounded-[10px] bg-[var(--accent)] px-1.5 text-[12px] font-semibold leading-none text-white"
+      aria-hidden
+    >
+      {label}
+    </span>
+  );
+}
 
 function ListSkeleton() {
   return (
@@ -121,12 +211,12 @@ function ListSkeleton() {
       {Array.from({ length: 3 }, (_, i) => (
         <li
           key={i}
-          className="flex min-h-[64px] items-center gap-[var(--sp-3)] px-[var(--sp-4)] py-[var(--sp-3)]"
+          className="flex h-[var(--inbox-row-height)] items-center gap-[var(--sp-3)] px-[var(--sp-4)]"
         >
-          <div className="h-12 w-12 shrink-0 rounded-full skeleton-shimmer" />
+          <div className="h-[var(--inbox-avatar-size)] w-[var(--inbox-avatar-size)] shrink-0 rounded-full skeleton-shimmer" />
           <div className="min-w-0 flex-1 space-y-[var(--sp-2)]">
             <div className="h-4 w-[55%] rounded skeleton-shimmer" />
-            <div className="h-3 w-[75%] rounded skeleton-shimmer" />
+            <div className="h-3.5 w-[75%] rounded skeleton-shimmer" />
           </div>
         </li>
       ))}
@@ -184,8 +274,11 @@ const ConversationRowItem = memo(function ConversationRowItem({
   nickname,
   lastActivity,
   lastPreview,
+  lastSenderId,
+  myUserId,
+  unreadCount,
   active,
-  isLast,
+  showSeparator,
 }: {
   id: string;
   otherUsername: string;
@@ -193,35 +286,65 @@ const ConversationRowItem = memo(function ConversationRowItem({
   nickname: string | null;
   lastActivity: string;
   lastPreview: string;
+  lastSenderId: string | null;
+  myUserId: string | null;
+  unreadCount: number;
   active: boolean;
-  isLast: boolean;
+  showSeparator: boolean;
 }) {
   const label = displayName({ username: otherUsername, nickname });
+  const unread = unreadCount > 0;
+  const preview = formatInboxPreviewLine({
+    preview: lastPreview,
+    myUserId,
+    lastSenderId,
+    isGroup: false,
+  });
+  const timeLabel = formatInboxTimestamp(lastActivity);
+  const ariaLabel = unread
+    ? `${label}, ${preview}, ${timeLabel}, ${unreadCount} unread messages`
+    : `${label}, ${preview}, ${timeLabel}`;
 
   return (
     <Link
       href={`/chats/${id}`}
-      className={`row-press flex min-h-[64px] min-w-0 items-center gap-[var(--sp-3)] px-[var(--sp-4)] ${
+      aria-label={ariaLabel}
+      className={`row-press flex h-[var(--inbox-row-height)] min-w-0 items-center gap-[var(--sp-3)] px-[var(--sp-4)] ${
         active ? "bg-[var(--surface)]" : ""
       }`}
     >
-      <Avatar avatarId={otherAvatarId} size={48} className="shrink-0" />
+      <Avatar
+        avatarId={otherAvatarId}
+        size={52}
+        className="shrink-0"
+      />
       <div
-        className={`flex min-w-0 flex-1 flex-col justify-center self-stretch py-[var(--sp-3)] ${
-          isLast ? "" : "border-b border-[var(--divider)]"
+        className={`flex min-h-0 min-w-0 flex-1 items-start gap-[var(--sp-3)] self-stretch py-[14px] ${
+          showSeparator ? "border-b border-[var(--row-separator)]" : ""
         }`}
       >
-        <div className="flex items-baseline justify-between gap-[var(--sp-2)]">
-          <p className="truncate text-[length:var(--text-body)] font-semibold text-[var(--text-primary)]">
+        <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 self-stretch">
+          <p
+            className={`truncate text-[16px] font-semibold leading-tight text-[var(--text-primary)]`}
+          >
             {label}
           </p>
-          <span className="shrink-0 text-[length:var(--text-caption)] text-[var(--text-secondary)]">
-            {formatListTime(lastActivity)}
-          </span>
+          <p
+            className={`truncate text-[14px] leading-tight ${
+              unread
+                ? "font-medium text-[var(--text-primary)]"
+                : "font-normal text-[var(--text-preview)]"
+            }`}
+          >
+            {preview}
+          </p>
         </div>
-        <p className="mt-0.5 truncate text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]">
-          {lastPreview}
-        </p>
+        <div className="flex shrink-0 flex-col items-end gap-1.5 pt-0.5">
+          <span className="text-[13px] leading-none text-[var(--text-secondary)]">
+            {timeLabel}
+          </span>
+          <UnreadBadge count={unreadCount} />
+        </div>
       </div>
     </Link>
   );
@@ -233,41 +356,81 @@ const GroupRowItem = memo(function GroupRowItem({
   avatarId,
   lastActivity,
   lastPreview,
+  lastSenderId,
+  lastSenderUsername,
+  senderNickname,
+  myUserId,
+  unreadCount,
   active,
-  isLast,
+  showSeparator,
 }: {
   id: string;
   name: string;
   avatarId: string | null;
   lastActivity: string;
   lastPreview: string;
+  lastSenderId: string | null;
+  lastSenderUsername: string | null;
+  senderNickname: string | null;
+  myUserId: string | null;
+  unreadCount: number;
   active: boolean;
-  isLast: boolean;
+  showSeparator: boolean;
 }) {
+  const unread = unreadCount > 0;
+  const senderLabel =
+    lastSenderUsername != null
+      ? displayName({
+          username: lastSenderUsername,
+          nickname: senderNickname,
+        })
+      : null;
+  const preview = formatInboxPreviewLine({
+    preview: lastPreview,
+    myUserId,
+    lastSenderId,
+    isGroup: true,
+    senderLabel,
+  });
+  const timeLabel = formatInboxTimestamp(lastActivity);
+  const ariaLabel = unread
+    ? `${name}, ${preview}, ${timeLabel}, ${unreadCount} unread messages`
+    : `${name}, ${preview}, ${timeLabel}`;
+
   return (
     <Link
       href={`/chats/group/${id}`}
-      className={`row-press flex min-h-[64px] min-w-0 items-center gap-[var(--sp-3)] px-[var(--sp-4)] ${
+      aria-label={ariaLabel}
+      className={`row-press flex h-[var(--inbox-row-height)] min-w-0 items-center gap-[var(--sp-3)] px-[var(--sp-4)] ${
         active ? "bg-[var(--surface)]" : ""
       }`}
     >
-      <GroupAvatar avatarId={avatarId} size={48} className="shrink-0" />
+      <GroupAvatar avatarId={avatarId} size={52} className="shrink-0" />
       <div
-        className={`flex min-w-0 flex-1 flex-col justify-center self-stretch py-[var(--sp-3)] ${
-          isLast ? "" : "border-b border-[var(--divider)]"
+        className={`flex min-h-0 min-w-0 flex-1 items-start gap-[var(--sp-3)] self-stretch py-[14px] ${
+          showSeparator ? "border-b border-[var(--row-separator)]" : ""
         }`}
       >
-        <div className="flex items-baseline justify-between gap-[var(--sp-2)]">
-          <p className="truncate text-[length:var(--text-body)] font-semibold text-[var(--text-primary)]">
+        <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 self-stretch">
+          <p className="truncate text-[16px] font-semibold leading-tight text-[var(--text-primary)]">
             {name}
           </p>
-          <span className="shrink-0 text-[length:var(--text-caption)] text-[var(--text-secondary)]">
-            {formatListTime(lastActivity)}
-          </span>
+          <p
+            className={`truncate text-[14px] leading-tight ${
+              unread
+                ? "font-medium text-[var(--text-primary)]"
+                : "font-normal text-[var(--text-preview)]"
+            }`}
+          >
+            {preview}
+          </p>
         </div>
-        <p className="mt-0.5 truncate text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]">
-          {lastPreview}
-        </p>
+        <div className="flex shrink-0 flex-col items-end gap-1.5 pt-0.5">
+          <span className="text-[13px] leading-none text-[var(--text-secondary)]">
+            {timeLabel}
+          </span>
+          <UnreadBadge count={unreadCount} />
+        </div>
       </div>
     </Link>
   );
@@ -298,8 +461,20 @@ export function ChatList({
   const myUserIdRef = useRef<string | null>(null);
   const myPrivateKeyRef = useRef<string | null>(null);
   const otherPublicKeyByConvRef = useRef<Map<string, string>>(new Map());
+  const activeConversationIdRef = useRef<string | null>(
+    activeConversationId ?? null,
+  );
+  const activeGroupIdRef = useRef<string | null>(activeGroupId ?? null);
   const pendingUpdateRef = useRef<
-    Map<string, { lastActivity: string; lastPreview?: string }>
+    Map<
+      string,
+      {
+        lastActivity: string;
+        lastPreview?: string;
+        lastSenderId?: string | null;
+        lastSenderUsername?: string | null;
+      }
+    >
   >(new Map());
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -308,6 +483,33 @@ export function ChatList({
     if (!el) return;
     setListScrolled(el.scrollTop > 0);
   }, []);
+
+  useEffect(() => {
+    activeConversationIdRef.current = activeConversationId ?? null;
+  }, [activeConversationId]);
+
+  useEffect(() => {
+    activeGroupIdRef.current = activeGroupId ?? null;
+  }, [activeGroupId]);
+
+  // Open conversation → local unread clears immediately (DB write is in the room).
+  useEffect(() => {
+    if (!activeConversationId) return;
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === activeConversationId ? { ...c, unreadCount: 0 } : c,
+      ),
+    );
+  }, [activeConversationId]);
+
+  useEffect(() => {
+    if (!activeGroupId) return;
+    setGroups((prev) =>
+      prev.map((g) =>
+        g.id === activeGroupId ? { ...g, unreadCount: 0 } : g,
+      ),
+    );
+  }, [activeGroupId]);
 
   const flushPendingUpdates = useCallback(() => {
     const pending = pendingUpdateRef.current;
@@ -323,6 +525,9 @@ export function ChatList({
           ...(next.lastPreview !== undefined
             ? { lastPreview: next.lastPreview }
             : {}),
+          ...(next.lastSenderId !== undefined
+            ? { lastSenderId: next.lastSenderId }
+            : {}),
         };
       });
       return sortDmByActivity(updated);
@@ -336,6 +541,12 @@ export function ChatList({
           lastActivity: next.lastActivity,
           ...(next.lastPreview !== undefined
             ? { lastPreview: next.lastPreview }
+            : {}),
+          ...(next.lastSenderId !== undefined
+            ? { lastSenderId: next.lastSenderId }
+            : {}),
+          ...(next.lastSenderUsername !== undefined
+            ? { lastSenderUsername: next.lastSenderUsername }
             : {}),
         };
       });
@@ -353,6 +564,8 @@ export function ChatList({
       otherPublicKey: c.otherPublicKey,
       lastActivity: c.lastActivity,
       lastPreview: c.lastPreview,
+      lastSenderId: c.lastSenderId,
+      unreadCount: c.unreadCount,
     }));
     const grp: InboxItem[] = groups.map((g) => ({
       kind: "group",
@@ -362,9 +575,17 @@ export function ChatList({
       memberCount: g.memberCount,
       lastActivity: g.lastActivity,
       lastPreview: g.lastPreview,
+      lastSenderId: g.lastSenderId,
+      lastSenderUsername: g.lastSenderUsername,
+      unreadCount: g.unreadCount,
     }));
     return sortInboxByActivity([...dm, ...grp]);
   }, [conversations, groups]);
+
+  const totalUnread = useMemo(
+    () => inboxItems.reduce((sum, item) => sum + item.unreadCount, 0),
+    [inboxItems],
+  );
 
   const filteredInbox = useMemo(() => {
     const q = searchQuery.trim();
@@ -450,15 +671,23 @@ export function ChatList({
       const prevGroupById = new Map(
         groupsRef.current.map((g) => [
           g.id,
-          { lastActivity: g.lastActivity, lastPreview: g.lastPreview },
+          {
+            lastActivity: g.lastActivity,
+            lastPreview: g.lastPreview,
+            lastSenderId: g.lastSenderId,
+            lastSenderUsername: g.lastSenderUsername,
+            unreadCount: g.unreadCount,
+          },
         ]),
       );
 
-      const nextGroups = await Promise.all(
+      const nextGroups: GroupListRow[] = await Promise.all(
         groupRows.map(async (g) => {
           const prior = prevGroupById.get(g.id);
           let lastActivity = prior?.lastActivity ?? g.createdAt;
           let lastPreview = prior?.lastPreview ?? "No messages yet";
+          let lastSenderId = prior?.lastSenderId ?? null;
+          let lastSenderUsername = prior?.lastSenderUsername ?? null;
 
           if (myPrivateKey) {
             try {
@@ -470,6 +699,8 @@ export function ChatList({
               );
               lastActivity = preview.lastActivity;
               lastPreview = preview.lastPreview;
+              lastSenderId = preview.lastSenderId;
+              lastSenderUsername = preview.lastSenderUsername;
             } catch {
               lastPreview = "Encrypted message";
             }
@@ -479,97 +710,135 @@ export function ChatList({
             ...g,
             lastActivity,
             lastPreview,
+            lastSenderId,
+            lastSenderUsername,
+            unreadCount: prior?.unreadCount ?? 0,
           };
         }),
       );
 
-      setGroups(sortGroupsByActivity(nextGroups));
+      let nextConversations: ConversationRow[] = [];
 
-      if (!convRows || convRows.length === 0) {
-        setConversations([]);
-        return;
-      }
+      if (convRows && convRows.length > 0) {
+        const otherIds = convRows.map((row) =>
+          row.participant_a === user.id ? row.participant_b : row.participant_a,
+        );
 
-      const otherIds = convRows.map((row) =>
-        row.participant_a === user.id ? row.participant_b : row.participant_a,
-      );
+        const { data: profiles, error: profileError } = await supabase
+          .from("profiles")
+          .select("id, username, avatar_id, public_key")
+          .in("id", otherIds);
 
-      const { data: profiles, error: profileError } = await supabase
-        .from("profiles")
-        .select("id, username, avatar_id, public_key")
-        .in("id", otherIds);
+        if (profileError) {
+          setListError("Could not load usernames.");
+          return;
+        }
 
-      if (profileError) {
-        setListError("Could not load usernames.");
-        return;
-      }
+        const profileById = new Map(
+          (profiles ?? []).map((p) => [
+            p.id as string,
+            {
+              username: p.username as string,
+              avatar_id: (p.avatar_id as string | null) ?? null,
+              public_key: (p.public_key as string) ?? "",
+            },
+          ]),
+        );
 
-      const profileById = new Map(
-        (profiles ?? []).map((p) => [
-          p.id as string,
-          {
-            username: p.username as string,
-            avatar_id: (p.avatar_id as string | null) ?? null,
-            public_key: (p.public_key as string) ?? "",
-          },
-        ]),
-      );
+        const prevById = new Map(
+          conversationsRef.current.map((c) => [
+            c.id,
+            {
+              lastActivity: c.lastActivity,
+              lastPreview: c.lastPreview,
+              lastSenderId: c.lastSenderId,
+              unreadCount: c.unreadCount,
+            },
+          ]),
+        );
 
-      const prevById = new Map(
-        conversationsRef.current.map((c) => [
-          c.id,
-          { lastActivity: c.lastActivity, lastPreview: c.lastPreview },
-        ]),
-      );
+        nextConversations = await Promise.all(
+          convRows.map(async (row) => {
+            const otherId =
+              row.participant_a === user.id
+                ? row.participant_b
+                : row.participant_a;
+            const profile = profileById.get(otherId as string);
+            const createdAt = row.created_at as string;
+            const prior = prevById.get(row.id as string);
+            const lastActivity =
+              prior &&
+              new Date(prior.lastActivity).getTime() >
+                new Date(createdAt).getTime()
+                ? prior.lastActivity
+                : createdAt;
 
-      const next = await Promise.all(
-        convRows.map(async (row) => {
-          const otherId =
-            row.participant_a === user.id
-              ? row.participant_b
-              : row.participant_a;
-          const profile = profileById.get(otherId as string);
-          const createdAt = row.created_at as string;
-          const prior = prevById.get(row.id as string);
-          const lastActivity =
-            prior &&
-            new Date(prior.lastActivity).getTime() > new Date(createdAt).getTime()
-              ? prior.lastActivity
-              : createdAt;
+            const otherPublicKey = profile?.public_key ?? "";
+            otherPublicKeyByConvRef.current.set(
+              row.id as string,
+              otherPublicKey,
+            );
 
-          const otherPublicKey = profile?.public_key ?? "";
-          otherPublicKeyByConvRef.current.set(row.id as string, otherPublicKey);
-
-          let lastPreview = prior?.lastPreview ?? "Encrypted message";
-          if (
-            myPrivateKey &&
-            otherPublicKey &&
-            (!prior?.lastPreview || prior.lastActivity !== lastActivity)
-          ) {
-            try {
-              lastPreview = await fetchConversationPreview(
-                row.id as string,
-                otherPublicKey,
-                myPrivateKey,
-              );
-            } catch {
-              lastPreview = "Encrypted message";
+            let lastPreview = prior?.lastPreview ?? "Encrypted message";
+            let lastSenderId = prior?.lastSenderId ?? null;
+            if (
+              myPrivateKey &&
+              otherPublicKey &&
+              (!prior?.lastPreview || prior.lastActivity !== lastActivity)
+            ) {
+              try {
+                const preview = await fetchConversationPreview(
+                  row.id as string,
+                  otherPublicKey,
+                  myPrivateKey,
+                );
+                lastPreview = preview.text;
+                lastSenderId = preview.senderId;
+              } catch {
+                lastPreview = "Encrypted message";
+              }
             }
-          }
 
-          return {
-            id: row.id as string,
-            otherUserId: otherId as string,
-            otherUsername: profile?.username ?? "unknown",
-            otherAvatarId: profile?.avatar_id ?? null,
-            otherPublicKey,
-            lastActivity,
-            lastPreview,
-          };
-        }),
+            return {
+              id: row.id as string,
+              otherUserId: otherId as string,
+              otherUsername: profile?.username ?? "unknown",
+              otherAvatarId: profile?.avatar_id ?? null,
+              otherPublicKey,
+              lastActivity,
+              lastPreview,
+              lastSenderId,
+              unreadCount: prior?.unreadCount ?? 0,
+            };
+          }),
+        );
+      }
+
+      const unreadRows = await fetchUnreadCounts();
+      const unreadMap = unreadCountMapFromRows(unreadRows);
+
+      setGroups(
+        sortGroupsByActivity(
+          nextGroups.map((g) => ({
+            ...g,
+            unreadCount:
+              activeGroupIdRef.current === g.id
+                ? 0
+                : (unreadMap.get(unreadMapKey("group", g.id)) ?? 0),
+          })),
+        ),
       );
-
-      setConversations(sortDmByActivity(next));
+      setConversations(
+        sortDmByActivity(
+          nextConversations.map((c) => ({
+            ...c,
+            unreadCount:
+              activeConversationIdRef.current === c.id
+                ? 0
+                : (unreadMap.get(unreadMapKey("dm", c.id)) ?? 0),
+          })),
+        ),
+      );
     } catch {
       setListError("Could not load conversations.");
     } finally {
@@ -621,6 +890,8 @@ export function ChatList({
             otherPublicKey,
             lastActivity: row.created_at,
             lastPreview: "Encrypted message",
+            lastSenderId: null,
+            unreadCount: 0,
           },
           ...prev,
         ]);
@@ -726,7 +997,21 @@ export function ChatList({
                 pendingUpdateRef.current.set(row.conversation_id, {
                   lastActivity: row.created_at,
                   ...(lastPreview !== undefined ? { lastPreview } : {}),
+                  lastSenderId: row.sender_id,
                 });
+              }
+
+              if (
+                row.sender_id !== user.id &&
+                row.conversation_id !== activeConversationIdRef.current
+              ) {
+                setConversations((prev) =>
+                  prev.map((c) =>
+                    c.id === row.conversation_id
+                      ? { ...c, unreadCount: c.unreadCount + 1 }
+                      : c,
+                  ),
+                );
               }
 
               if (!flushTimerRef.current) {
@@ -760,12 +1045,14 @@ export function ChatList({
             void (async () => {
               const myPrivateKey = myPrivateKeyRef.current;
               let lastPreview: string | undefined;
+              let lastSenderUsername: string | null | undefined;
+
               if (myPrivateKey) {
                 try {
-                  const supabase = createClient();
-                  const { data: senderProfile } = await supabase
+                  const client = createClient();
+                  const { data: senderProfile } = await client
                     .from("profiles")
-                    .select("public_key")
+                    .select("public_key, username")
                     .eq("id", row.sender_id)
                     .maybeSingle();
 
@@ -774,6 +1061,8 @@ export function ChatList({
                     (senderProfile?.public_key as string | null) ?? null,
                     myPrivateKey,
                   );
+                  lastSenderUsername =
+                    (senderProfile?.username as string | null) ?? null;
                 } catch {
                   // Keep existing preview on decrypt failure.
                 }
@@ -788,7 +1077,24 @@ export function ChatList({
                 pendingUpdateRef.current.set(row.group_id, {
                   lastActivity: row.created_at,
                   ...(lastPreview !== undefined ? { lastPreview } : {}),
+                  lastSenderId: row.sender_id,
+                  ...(lastSenderUsername !== undefined
+                    ? { lastSenderUsername }
+                    : {}),
                 });
+              }
+
+              if (
+                row.sender_id !== user.id &&
+                row.group_id !== activeGroupIdRef.current
+              ) {
+                setGroups((prev) =>
+                  prev.map((g) =>
+                    g.id === row.group_id
+                      ? { ...g, unreadCount: g.unreadCount + 1 }
+                      : g,
+                  ),
+                );
               }
 
               if (!flushTimerRef.current) {
@@ -827,6 +1133,9 @@ export function ChatList({
                     ...group,
                     lastActivity: group.createdAt,
                     lastPreview: "No messages yet",
+                    lastSenderId: null,
+                    lastSenderUsername: null,
+                    unreadCount: 0,
                   },
                   ...prev,
                 ]);
@@ -888,14 +1197,17 @@ export function ChatList({
   const showLoading = loadingList || !nicknamesLoaded;
 
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-[var(--bg)] screen-enter">
+    <div
+      className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-[var(--bg)] screen-enter"
+      data-total-unread={totalUnread}
+    >
       <header
         className={`safe-pt shrink-0 bg-[var(--bg)] transition-[border-color] duration-150 ${
           listScrolled ? "border-b border-[var(--divider)]" : "border-b border-transparent"
         }`}
       >
-        <div className="flex items-center justify-between px-[var(--sp-4)] pb-[var(--sp-2)] pt-[var(--sp-2)]">
-          <h1 className="text-[length:var(--text-title-lg)] font-bold leading-tight text-[var(--text-primary)]">
+        <div className="flex h-[52px] items-center justify-between px-[var(--sp-4)]">
+          <h1 className="text-[22px] font-bold leading-tight tracking-tight text-[var(--text-primary)]">
             Chats
           </h1>
           <div className="flex items-center">
@@ -974,34 +1286,23 @@ export function ChatList({
             ) : inboxItems.length === 0 ? (
               <div
                 className="flex flex-col items-center px-[var(--sp-5)] pb-[var(--sp-8)] text-center"
-                style={{ paddingTop: "min(40vh, 280px)" }}
+                style={{ paddingTop: "min(36vh, 240px)" }}
               >
-                <div className="mb-[var(--sp-4)] flex h-16 -space-x-2">
-                  {AVATARS.slice(0, 4).map((a) => (
-                    <Avatar
-                      key={a.id}
-                      avatarId={a.id}
-                      size={32}
-                      className="ring-2 ring-[var(--bg)]"
-                    />
-                  ))}
-                </div>
-                <p className="text-[length:var(--text-title)] font-semibold text-[var(--text-primary)]">
-                  No chats yet
-                </p>
-                <p className="mt-[var(--sp-1)] max-w-[240px] text-[length:var(--text-secondary-size)] leading-[1.4] text-[var(--text-secondary)]">
-                  Start a private conversation by username.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setComposeOpen(true)}
-                  className="mt-[var(--sp-4)] pressable flex h-11 items-center justify-center rounded-[var(--radius-input)] bg-[var(--accent)] px-[var(--sp-6)] text-[length:var(--text-secondary-size)] font-medium text-white active:bg-[var(--accent-pressed)]"
+                <span
+                  className="mb-[var(--sp-4)] flex h-14 w-14 items-center justify-center rounded-full bg-[var(--surface)] text-[var(--text-secondary)]"
+                  aria-hidden
                 >
-                  New message
-                </button>
+                  <PeopleIcon className="h-7 w-7" />
+                </span>
+                <p className="text-[16px] font-semibold text-[var(--text-primary)]">
+                  No conversations yet
+                </p>
+                <p className="mt-[var(--sp-1)] max-w-[240px] text-[14px] leading-[1.4] text-[var(--text-secondary)]">
+                  Tap the compose button above to start a private chat.
+                </p>
               </div>
             ) : filteredInbox.length === 0 ? (
-              <p className="px-[var(--sp-4)] py-[var(--sp-6)] text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]">
+              <p className="px-[var(--sp-4)] py-[var(--sp-6)] text-[14px] text-[var(--text-secondary)]">
                 No matches.
               </p>
             ) : (
@@ -1015,8 +1316,17 @@ export function ChatList({
                         avatarId={item.avatarId}
                         lastActivity={item.lastActivity}
                         lastPreview={item.lastPreview}
+                        lastSenderId={item.lastSenderId}
+                        lastSenderUsername={item.lastSenderUsername}
+                        senderNickname={
+                          item.lastSenderId
+                            ? (nicknames[item.lastSenderId] ?? null)
+                            : null
+                        }
+                        myUserId={myUserId}
+                        unreadCount={item.unreadCount}
                         active={activeGroupId === item.id}
-                        isLast={index === filteredInbox.length - 1}
+                        showSeparator={index !== filteredInbox.length - 1}
                       />
                     ) : (
                       <ConversationRowItem
@@ -1026,8 +1336,11 @@ export function ChatList({
                         nickname={nicknames[item.otherUserId] ?? null}
                         lastActivity={item.lastActivity}
                         lastPreview={item.lastPreview}
+                        lastSenderId={item.lastSenderId}
+                        myUserId={myUserId}
+                        unreadCount={item.unreadCount}
                         active={activeConversationId === item.id}
-                        isLast={index === filteredInbox.length - 1}
+                        showSeparator={index !== filteredInbox.length - 1}
                       />
                     )}
                   </li>

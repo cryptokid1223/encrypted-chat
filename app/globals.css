@@ -7,13 +7,48 @@
   --surface-elevated: #242220; /* cards, sheets, one level above surface */
   --text-primary: #F5F3F0; /* soft white, not pure white */
   --text-secondary: #A8A29E; /* muted warm gray */
+  --text-preview: rgba(245, 243, 240, 0.6); /* ~60% primary — list previews when read */
   --divider: #2A2725; /* subtle low-contrast */
+  --row-separator: rgba(255, 255, 255, 0.08); /* inset hairline under inbox rows */
   --accent: #EA580C; /* Celesth orange */
   --accent-pressed: #C2410C; /* darker orange for :active states */
+  --bubble-out: #C94A0C; /* outgoing bubble — slightly darkened for white text contrast */
+  --bubble-out-failed: color-mix(in srgb, var(--bubble-out) 60%, transparent);
   --destructive: #EF4444; /* iOS-style red */
+  --danger: #EF4444; /* auth / form error text */
   --success: #22C55E; /* restrained green */
   --warning-bg: rgba(234, 88, 12, 0.10); /* subtle tint, replaces solid brown panels later */
   --warning-border: rgba(234, 88, 12, 0.35);
+  --warning-muted-border: rgba(234, 88, 12, 0.22); /* quiet warning card edge */
+  --auth-input-border: rgba(255, 255, 255, 0.10);
+  --strength-weak: #F87171;
+  --strength-ok: #FBBF24;
+  --strength-strong: #4ADE80;
+
+  /* iOS Settings–style icon badge tints */
+  --settings-tint-blue: #3B82F6;
+  --settings-tint-orange: #EA580C;
+  --settings-tint-purple: #8B5CF6;
+  --settings-tint-green: #22C55E;
+  --settings-tint-teal: #14B8A6;
+  --settings-tint-gray: #78716C;
+  --settings-tint-indigo: #6366F1;
+  --settings-card-radius: 12px;
+  --settings-row-height: 48px;
+  --settings-separator: rgba(255, 255, 255, 0.08);
+
+  /* Group chat sender name colors (stable hash → index) */
+  --sender-1: #F472B6; /* pink */
+  --sender-2: #38BDF8; /* sky */
+  --sender-3: #4ADE80; /* green */
+  --sender-4: #FBBF24; /* amber */
+  --sender-5: #A78BFA; /* violet */
+  --sender-6: #2DD4BF; /* teal */
+
+  /* Inbox list density */
+  --inbox-row-height: 72px;
+  --inbox-avatar-size: 52px;
+  --unread-badge-size: 20px;
 
   /* Spacing scale */
   --sp-1: 4px;
@@ -150,6 +185,16 @@ label {
 
 .row-press:active {
   background-color: var(--surface);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row-press {
+    transition: none;
+  }
+
+  .row-press-elevated {
+    transition: none;
+  }
 }
 
 .row-press-elevated {

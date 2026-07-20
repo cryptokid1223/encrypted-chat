@@ -8,7 +8,6 @@ import { Avatar } from "@/lib/avatars";
 import {
   displayName,
   formatAtUsername,
-  hasNickname,
 } from "@/lib/display-name";
 
 const NICKNAME_MAX = 30;
@@ -46,14 +45,14 @@ function NicknameSheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby="nickname-editor-title"
-        className="sheet-panel-enter safe-pb relative w-full rounded-t-[var(--radius-sheet)] bg-[var(--surface-elevated)] p-[var(--sp-5)]"
+        className="sheet-panel-enter safe-pb relative w-full rounded-t-[var(--radius-sheet)] bg-[var(--surface)] p-5"
       >
-        <div className="flex justify-center pb-[var(--sp-2)]">
+        <div className="flex justify-center pb-2">
           <div className="h-1 w-9 rounded-full bg-[var(--divider)]" />
         </div>
         <p
           id="nickname-editor-title"
-          className="text-[length:var(--text-title)] font-semibold text-[var(--text-primary)]"
+          className="text-[17px] font-semibold text-[var(--text-primary)]"
         >
           Nickname
         </p>
@@ -66,22 +65,19 @@ function NicknameSheet({
           onFocus={(e) =>
             e.target.scrollIntoView({ block: "nearest", behavior: "smooth" })
           }
-          className="mt-[var(--sp-4)] h-12 w-full rounded-[var(--radius-input)] border border-[var(--divider)] bg-[var(--surface)] px-[var(--sp-4)] text-[length:var(--text-body)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[var(--accent)]"
+          className="mt-4 h-[52px] w-full rounded-[12px] border border-[var(--auth-input-border)] bg-[var(--surface-elevated)] px-4 text-[16px] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[var(--accent)]"
         />
         {error ? (
-          <p
-            className="mt-[var(--sp-2)] text-[length:var(--text-secondary-size)] text-[var(--destructive)]"
-            role="alert"
-          >
+          <p className="mt-2 text-[13px] text-[var(--danger)]" role="alert">
             {error}
           </p>
         ) : null}
-        <div className="mt-[var(--sp-4)] flex gap-[var(--sp-2)]">
+        <div className="mt-4 flex gap-2">
           <button
             type="button"
             disabled={busy}
             onClick={onClose}
-            className="pressable flex min-h-11 flex-1 items-center justify-center rounded-[var(--radius-input)] text-[length:var(--text-body)] font-medium text-[var(--text-primary)] disabled:opacity-40"
+            className="pressable flex min-h-11 flex-1 items-center justify-center rounded-[12px] text-[16px] font-medium text-[var(--text-primary)] disabled:opacity-40"
           >
             Cancel
           </button>
@@ -103,7 +99,7 @@ function NicknameSheet({
                   }
                 })();
               }}
-              className="pressable flex min-h-11 flex-1 items-center justify-center rounded-[var(--radius-input)] text-[length:var(--text-body)] font-medium text-[var(--destructive)] disabled:opacity-40"
+              className="pressable flex min-h-11 flex-1 items-center justify-center rounded-[12px] text-[16px] font-medium text-[var(--danger)] disabled:opacity-40"
             >
               Clear
             </button>
@@ -125,7 +121,7 @@ function NicknameSheet({
                 }
               })();
             }}
-            className="pressable flex min-h-11 flex-1 items-center justify-center rounded-[var(--radius-input)] bg-[var(--accent)] text-[length:var(--text-body)] font-semibold text-white active:bg-[var(--accent-pressed)] disabled:opacity-40"
+            className="pressable flex min-h-11 flex-1 items-center justify-center rounded-[12px] bg-[var(--accent)] text-[16px] font-semibold text-white active:bg-[var(--accent-pressed)] disabled:opacity-40"
           >
             Save
           </button>
@@ -160,7 +156,6 @@ export function ContactDetail({
   const nickname = getNickname(contactId);
   const identity = { username, nickname };
   const titled = displayName(identity);
-  const showUsernameSubtitle = hasNickname(identity);
 
   return (
     <div className="screen-enter fixed inset-x-0 top-0 z-50 flex h-app min-w-0 flex-col overflow-x-hidden md:inset-0 md:items-center md:justify-center md:bg-black/60 md:p-[var(--sp-4)]">
@@ -189,21 +184,20 @@ export function ContactDetail({
 
         <div className="safe-pb min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-md px-[var(--sp-4)] pb-[var(--sp-6)] sm:px-[var(--sp-6)]">
-            <div className="flex flex-col items-center pt-[var(--sp-6)]">
-              <Avatar avatarId={avatarId} size={88} />
-              <p className="mt-[var(--sp-3)] text-center text-[length:var(--text-title-lg)] font-bold leading-tight text-[var(--text-primary)]">
+            <div className="flex flex-col items-center pt-6">
+              <Avatar avatarId={avatarId} size={72} />
+              <p className="mt-3 text-center text-[20px] font-semibold leading-tight text-[var(--text-primary)]">
                 {titled}
               </p>
-              {showUsernameSubtitle ? (
-                <p className="mt-[var(--sp-1)] text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]">
-                  {formatAtUsername(username)}
-                </p>
-              ) : null}
+              <p className="mt-1 text-[14px] text-[var(--text-secondary)]">
+                {formatAtUsername(username)}
+              </p>
             </div>
 
             <SettingsSection title="Details">
               <SettingsRow
                 icon={<PersonIcon />}
+                iconTint="var(--settings-tint-blue)"
                 label="Nickname"
                 value={nickname ?? "None"}
                 chevron

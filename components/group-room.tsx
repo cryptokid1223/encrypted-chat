@@ -8,11 +8,15 @@ import { GroupAvatar } from "@/components/group-avatar";
 import { GroupInfo } from "@/components/group-info";
 import { ChevronLeftIcon } from "@/components/icons";
 import { useKeyGate } from "@/components/key-gate";
-import { MessageBubble } from "@/components/message-bubble";
+import { MessageBubble, SystemPill } from "@/components/message-bubble";
 import { PhotoViewerHostProvider } from "@/components/photo-viewer-host";
 import { useNicknames } from "@/components/nicknames-context";
 import { useVisualViewport } from "@/hooks/useVisualViewport";
 import { useConversationAnchoring } from "@/hooks/useConversationAnchoring";
+import {
+  markReadIfVisible,
+  useMarkConversationRead,
+} from "@/hooks/useMarkConversationRead";
 import {
   GROUP_FETCH_LIMIT,
   PAGE_SIZE,
@@ -201,6 +205,12 @@ export function GroupRoom() {
     scrollToBottom,
     isNearBottom,
   } = useConversationAnchoring(
+    groupId,
+    status === "ready" && loadedGroupId === groupId,
+  );
+
+  useMarkConversationRead(
+    "group",
     groupId,
     status === "ready" && loadedGroupId === groupId,
   );
@@ -605,6 +615,7 @@ export function GroupRoom() {
                   createdAt: display.createdAt,
                   decryptFailed: display.decryptFailed,
                 });
+                markReadIfVisible("group", groupId);
               })();
             },
           )
@@ -1258,7 +1269,7 @@ export function GroupRoom() {
   return (
     <PhotoViewerHostProvider hostRef={photoViewerHostRef}>
       <div className="screen-enter relative flex h-app min-h-0 w-full min-w-0 flex-col overflow-x-hidden bg-[var(--bg)] md:h-full md:flex-1">
-        <header className="safe-pt shrink-0 border-b border-[var(--divider)] bg-[var(--bg)]">
+        <header className="safe-pt shrink-0 border-b border-[var(--row-separator)] bg-[var(--bg)]">
           <div className="flex h-[52px] items-center gap-[var(--sp-2)] px-[var(--sp-3)]">
             <Link
               href="/chats"
@@ -1270,14 +1281,14 @@ export function GroupRoom() {
             <button
               type="button"
               onClick={() => setGroupInfoOpen(true)}
-              className="row-press flex min-h-11 min-w-0 flex-1 items-center gap-[var(--sp-2)] rounded-[var(--radius-input)] text-left"
+              className="row-press flex min-h-11 min-w-0 flex-1 items-center gap-[var(--sp-3)] rounded-[var(--radius-input)] text-left"
             >
-              <GroupAvatar avatarId={avatarId} size={32} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[length:var(--text-title)] font-semibold leading-tight text-[var(--text-primary)]">
+              <GroupAvatar avatarId={avatarId} size={36} />
+              <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+                <p className="truncate text-[16px] font-semibold leading-tight text-[var(--text-primary)]">
                   {name}
                 </p>
-                <p className="text-[length:var(--text-caption)] leading-tight text-[var(--text-secondary)]">
+                <p className="truncate text-[12px] leading-tight text-[var(--text-secondary)]">
                   {memberLabel}
                 </p>
               </div>
@@ -1322,14 +1333,9 @@ export function GroupRoom() {
                 ) : null}
                 {showJoinPill ? (
                   <li>
-                    <div
-                      className="flex justify-center"
-                      style={{ margin: "var(--sp-4) 0" }}
-                    >
-                      <span className="rounded-[10px] bg-[var(--surface)] px-[10px] py-1 text-[length:var(--text-caption)] text-[var(--text-secondary)]">
-                        Messages before you joined aren&apos;t visible.
-                      </span>
-                    </div>
+                    <SystemPill>
+                      Messages before you joined aren&apos;t visible.
+                    </SystemPill>
                   </li>
                 ) : null}
                 {messages.map((m, i) => {
@@ -1362,13 +1368,18 @@ export function GroupRoom() {
                   const senderMember = members.find(
                     (member) => member.userId === m.senderId,
                   );
-                  const senderLabel =
+                  const senderFullName =
                     !mine && isFirstInGroup && senderMember
                       ? displayName({
                           username: senderMember.username,
                           nickname: getNickname(m.senderId),
                         })
                       : undefined;
+                  const senderLabel = senderFullName
+                    ? senderFullName.startsWith("@")
+                      ? senderFullName.slice(1)
+                      : senderFullName.split(/\s+/)[0] || senderFullName
+                    : undefined;
 
                   return (
                     <li key={m.id}>
@@ -1390,6 +1401,7 @@ export function GroupRoom() {
                         localPreviewUrl={m.localPreviewUrl}
                         pendingAttachment={m.pendingAttachment}
                         senderLabel={senderLabel}
+                        senderId={m.senderId}
                         onRetry={handleRetry}
                       />
                     </li>

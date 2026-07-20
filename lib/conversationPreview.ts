@@ -9,7 +9,7 @@ export async function fetchConversationPreview(
   conversationId: string,
   theirPublicKey: string,
   myPrivateKey: string,
-): Promise<string> {
+): Promise<{ text: string; senderId: string | null }> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("messages")
@@ -20,7 +20,7 @@ export async function fetchConversationPreview(
     .maybeSingle();
 
   if (error || !data) {
-    return "Encrypted message";
+    return { text: "Encrypted message", senderId: null };
   }
 
   const decrypted = await decryptMessageRow(
@@ -28,7 +28,10 @@ export async function fetchConversationPreview(
     theirPublicKey,
     myPrivateKey,
   );
-  return messagePreviewText(decrypted.body);
+  return {
+    text: messagePreviewText(decrypted.body),
+    senderId: (data.sender_id as string) ?? null,
+  };
 }
 
 export async function previewFromMessageRow(

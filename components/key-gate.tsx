@@ -10,9 +10,11 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
-import { AuthAtmosphere } from "@/components/auth-atmosphere";
+import {
+  AuthBrandHeader,
+  AuthPrimaryButton,
+} from "@/components/auth-ui";
 import { KeyQrScanner } from "@/components/key-qr-scanner";
-import { Logo } from "@/components/logo";
 import {
   hasPrivateKey,
   invalidatePrivateKeyCache,
@@ -186,7 +188,7 @@ export function KeyGate({ children }: { children: ReactNode }) {
 
   if (!ready) {
     return (
-      <div className="flex h-full min-h-0 flex-1 items-center justify-center bg-[#0F0E0D] p-6 text-[13px] text-[#6E6963]">
+      <div className="flex h-full min-h-0 flex-1 items-center justify-center bg-[var(--bg)] p-6 text-[13px] text-[var(--text-secondary)]">
         Loading…
       </div>
     );
@@ -195,74 +197,66 @@ export function KeyGate({ children }: { children: ReactNode }) {
   if (!hasKey) {
     return (
       <KeyGateContext.Provider value={{ hasKey: false, requireKeyImport }}>
-        <div className="relative flex h-app min-h-0 flex-1 flex-col overflow-hidden bg-[#0F0E0D]">
-          <div className="safe-px flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
+        <div className="relative flex h-app min-h-0 flex-1 flex-col overflow-hidden bg-[var(--bg)]">
+          <div className="safe-pb mx-auto flex min-h-0 w-full max-w-[400px] flex-1 flex-col overflow-y-auto px-6 pt-[max(calc(var(--safe-top)+1.25rem),12vh)]">
             {flash ? (
               <div
                 role="status"
-                className="fixed left-1/2 top-[max(1rem,env(safe-area-inset-top))] z-50 max-w-[90vw] -translate-x-1/2 rounded-xl border border-[#2E2B28] bg-[#1A1816] px-4 py-2.5 text-[13px] text-[#FAFAF9]"
+                className="fixed left-1/2 top-[max(1rem,env(safe-area-inset-top))] z-50 max-w-[90vw] -translate-x-1/2 rounded-[12px] border border-[var(--auth-input-border)] bg-[var(--surface)] px-4 py-2.5 text-[13px] text-[var(--text-primary)]"
               >
                 {flash}
               </div>
             ) : null}
-            <AuthAtmosphere />
-            <div className="safe-pb relative z-10 my-auto w-full max-w-md rounded-3xl border border-[#2E2B28] bg-[#1A1816] p-8">
-              <div className="flex justify-center">
-                <Logo size="lg" markSize={28} />
-              </div>
-              <p className="mt-6 text-[20px] font-semibold leading-[1.4] text-[#FAFAF9]">
-                Your encryption key isn&apos;t on this device
-              </p>
-              {checkNotice ? (
-                <p
-                  className="mt-2 text-[13px] leading-[1.4] text-amber-400/90"
-                  role="status"
-                >
-                  {checkNotice}
-                </p>
-              ) : null}
-              <p className="mt-2 text-[13px] leading-[1.4] text-[#6E6963]">
-                Signed in on a new device? Import the key backup you downloaded,
-                or log out and create a new account.
-              </p>
-              <p className="mt-2 text-[12px] leading-[1.4] text-[#6E6963]">
-                Accepts{" "}
-                <span className="text-[#FAFAF9]">celesth-key-backup.txt</span>{" "}
-                or older{" "}
-                <span className="text-[#FAFAF9]">mychat-key-backup.txt</span>.
-              </p>
 
-              <label
-                className={`mt-5 flex min-h-[120px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#2E2B28] bg-[#242220] px-4 py-6 text-center transition-colors duration-150 ease-in-out hover:border-[#EA580C]/50 ${
-                  importing ? "opacity-60" : ""
-                }`}
+            <AuthBrandHeader subtitle="Private messaging. End-to-end encrypted." />
+
+            <h1 className="mt-[var(--sp-6)] text-[22px] font-bold leading-tight tracking-tight text-[var(--text-primary)]">
+              Restore your encryption key
+            </h1>
+            <p className="mt-2 text-[15px] leading-[1.4] text-[var(--text-secondary)]">
+              This device doesn&apos;t have your key. Import a backup or scan a
+              QR from your other device.
+            </p>
+            {checkNotice ? (
+              <p
+                className="mt-2 text-[13px] leading-[1.4] text-[var(--strength-ok)]"
+                role="status"
               >
-                <span className="text-[14px] font-medium text-[#FAFAF9]">
-                  {importing ? "Importing…" : "Import key backup"}
-                </span>
-                <span className="mt-1 text-[12px] text-[#6E6963]">
-                  Tap to browse · .txt files
-                </span>
-                <input
-                  type="file"
-                  accept=".txt,text/plain"
-                  disabled={importing}
-                  onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
-                  className="sr-only"
-                />
-              </label>
+                {checkNotice}
+              </p>
+            ) : null}
+
+            <div className="mt-[var(--sp-6)]">
+              <AuthPrimaryButton
+                type="button"
+                loading={importing}
+                disabled={importing}
+                onClick={() => {
+                  document.getElementById("key-gate-file-input")?.click();
+                }}
+              >
+                Import key backup
+              </AuthPrimaryButton>
+              <input
+                id="key-gate-file-input"
+                type="file"
+                accept=".txt,text/plain"
+                disabled={importing}
+                onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
+                className="sr-only"
+              />
 
               <button
                 type="button"
                 disabled={importing}
                 onClick={() => setScanOpen(true)}
-                className="mt-3 flex min-h-[44px] w-full items-center justify-center rounded-xl border border-[#2E2B28] bg-[#242220] px-4 text-[14px] font-medium text-[#FAFAF9] transition-colors duration-150 ease-in-out hover:border-[#EA580C]/50 hover:bg-[#242220]/80 disabled:opacity-40"
+                className="pressable mt-4 w-full text-center text-[15px] font-medium text-[var(--accent)] disabled:opacity-40"
               >
                 Scan QR code
               </button>
 
               {error ? (
-                <p className="mt-3 text-[13px] text-red-400" role="alert">
+                <p className="mt-3 text-[13px] text-[var(--danger)]" role="alert">
                   {error}
                 </p>
               ) : null}
@@ -271,7 +265,7 @@ export function KeyGate({ children }: { children: ReactNode }) {
                 type="button"
                 onClick={logout}
                 disabled={loggingOut}
-                className="mt-5 w-full text-center text-[13px] font-medium text-[#6E6963] transition-colors duration-150 ease-in-out hover:text-red-400 disabled:opacity-40"
+                className="pressable mt-6 w-full text-center text-[15px] font-medium text-[var(--text-secondary)] disabled:opacity-40"
               >
                 {loggingOut ? "Logging out…" : "Log out"}
               </button>

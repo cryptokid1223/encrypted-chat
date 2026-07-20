@@ -3,21 +3,49 @@
 import type { ReactNode } from "react";
 import { ChevronRightIcon } from "@/components/icons";
 
-export function SettingsSection({
-  title,
+/** 28px rounded-square badge — iOS Settings glyph style. */
+export function SettingsIconBadge({
+  tint,
   children,
 }: {
-  title: string;
+  tint: string;
   children: ReactNode;
 }) {
   return (
-    <section className="mt-[var(--sp-6)]">
-      <h2 className="mb-[var(--sp-2)] pl-[var(--sp-4)] text-[length:var(--text-section)] font-semibold text-[var(--text-secondary)]">
-        {title}
-      </h2>
-      <div className="overflow-hidden rounded-[var(--radius-card)] bg-[var(--surface)]">
+    <span
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] text-white [&_svg]:h-4 [&_svg]:w-4"
+      style={{ backgroundColor: tint }}
+      aria-hidden
+    >
+      {children}
+    </span>
+  );
+}
+
+export function SettingsSection({
+  title,
+  children,
+  footer,
+}: {
+  title?: string;
+  children: ReactNode;
+  footer?: ReactNode;
+}) {
+  return (
+    <section className="mt-6">
+      {title ? (
+        <h2 className="mb-2 px-4 text-[13px] font-normal uppercase tracking-[0.5px] text-[var(--text-secondary)]">
+          {title}
+        </h2>
+      ) : null}
+      <div className="overflow-hidden rounded-[var(--settings-card-radius)] bg-[var(--surface)]">
         {children}
       </div>
+      {footer ? (
+        <div className="mt-2 px-4 text-[13px] leading-[1.4] text-[var(--text-secondary)]">
+          {footer}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -26,6 +54,7 @@ export function SettingsRow({
   label,
   value,
   icon,
+  iconTint,
   onClick,
   chevron = false,
   destructive = false,
@@ -35,6 +64,8 @@ export function SettingsRow({
   label: string;
   value?: string;
   icon?: ReactNode;
+  /** CSS color for the leading icon badge (token). */
+  iconTint?: string;
   onClick?: () => void;
   chevron?: boolean;
   destructive?: boolean;
@@ -43,44 +74,39 @@ export function SettingsRow({
 }) {
   const Tag = onClick ? "button" : "div";
   const hasIcon = Boolean(icon);
+  const tint = iconTint ?? "var(--settings-tint-gray)";
 
   return (
     <Tag
       type={onClick ? "button" : undefined}
       onClick={onClick}
       disabled={disabled}
-      className={`flex w-full min-h-12 items-center text-left ${
-        hasIcon
-          ? "gap-[var(--sp-3)] pl-[var(--sp-4)] pr-[var(--sp-4)]"
-          : "px-[var(--sp-4)]"
-      } ${
-        onClick
-          ? "row-press-elevated disabled:opacity-40"
-          : ""
+      className={`flex h-[var(--settings-row-height)] w-full items-center gap-3 px-4 text-left ${
+        onClick ? "row-press-elevated disabled:opacity-40" : ""
       }`}
     >
       {hasIcon ? (
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center text-[var(--text-secondary)] [&>svg]:h-5 [&>svg]:w-5">
-          {icon}
-        </span>
+        <SettingsIconBadge tint={tint}>{icon}</SettingsIconBadge>
       ) : null}
       <div
-        className={`flex min-w-0 flex-1 items-center justify-between gap-[var(--sp-3)] self-stretch py-[var(--sp-3)] ${
-          isLast ? "" : "border-b border-[var(--divider)]"
+        className={`flex min-h-0 min-w-0 flex-1 items-center justify-between gap-3 self-stretch ${
+          isLast
+            ? ""
+            : "border-b border-[var(--settings-separator)]"
         }`}
       >
         <span
-          className={`text-[length:var(--text-body)] ${
+          className={`truncate text-[16px] ${
             destructive
-              ? "font-semibold text-[var(--destructive)]"
+              ? "text-[var(--danger)]"
               : "text-[var(--text-primary)]"
           }`}
         >
           {label}
         </span>
-        <span className="flex shrink-0 items-center gap-[var(--sp-2)]">
+        <span className="flex shrink-0 items-center gap-2">
           {value ? (
-            <span className="max-w-[160px] truncate text-[length:var(--text-body)] text-[var(--text-secondary)]">
+            <span className="max-w-[160px] truncate text-[14px] text-[var(--text-secondary)]">
               {value}
             </span>
           ) : null}
@@ -99,47 +125,65 @@ export function SettingsToggleRow({
   onChange,
   disabled = false,
   isLast = false,
+  icon,
+  iconTint,
 }: {
   label: string;
   checked: boolean;
   onChange: (next: boolean) => void;
   disabled?: boolean;
   isLast?: boolean;
+  icon?: ReactNode;
+  iconTint?: string;
 }) {
+  const tint = iconTint ?? "var(--settings-tint-purple)";
+  const switchId = `settings-toggle-${label.replace(/\s+/g, "-").toLowerCase()}`;
+
   return (
-    <label
-      className={`flex w-full min-h-12 cursor-pointer items-center gap-[var(--sp-3)] px-[var(--sp-4)] ${
+    <div
+      className={`flex h-[var(--settings-row-height)] w-full items-center gap-3 px-4 ${
         disabled ? "opacity-40" : ""
       }`}
     >
+      {icon ? (
+        <SettingsIconBadge tint={tint}>{icon}</SettingsIconBadge>
+      ) : null}
       <div
-        className={`flex min-w-0 flex-1 items-center justify-between gap-[var(--sp-3)] self-stretch py-[var(--sp-3)] ${
-          isLast ? "" : "border-b border-[var(--divider)]"
+        className={`flex min-h-0 min-w-0 flex-1 items-center justify-between gap-3 self-stretch ${
+          isLast ? "" : "border-b border-[var(--settings-separator)]"
         }`}
       >
-        <span className="text-[length:var(--text-body)] text-[var(--text-primary)]">
+        <label
+          htmlFor={switchId}
+          className="min-w-0 flex-1 cursor-pointer truncate text-[16px] text-[var(--text-primary)]"
+        >
           {label}
-        </span>
-        <span className="relative inline-flex h-7 w-12 shrink-0 items-center">
-          <input
-            type="checkbox"
-            role="switch"
-            checked={checked}
-            disabled={disabled}
-            onChange={(e) => onChange(e.target.checked)}
-            className="peer sr-only"
-          />
+        </label>
+        <button
+          id={switchId}
+          type="button"
+          role="switch"
+          aria-checked={checked}
+          aria-label={label}
+          disabled={disabled}
+          onClick={() => onChange(!checked)}
+          className="relative inline-flex h-[31px] w-[51px] shrink-0 items-center rounded-full transition-colors duration-150 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed"
+          style={{
+            backgroundColor: checked
+              ? "var(--accent)"
+              : "var(--divider)",
+          }}
+        >
           <span
             aria-hidden
-            className="absolute inset-0 rounded-full bg-[var(--divider)] transition-colors duration-150 peer-checked:bg-[var(--accent)] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--accent)]"
+            className="absolute left-[2px] h-[27px] w-[27px] rounded-full bg-white shadow transition-transform duration-150 ease-out"
+            style={{
+              transform: checked ? "translateX(20px)" : "translateX(0)",
+            }}
           />
-          <span
-            aria-hidden
-            className="absolute left-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform duration-150 peer-checked:translate-x-5"
-          />
-        </span>
+        </button>
       </div>
-    </label>
+    </div>
   );
 }
 
@@ -163,7 +207,7 @@ export function SettingsConfirmDialog({
   destructive?: boolean;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-[var(--sp-4)]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <button
         type="button"
         aria-label="Close"
@@ -175,28 +219,28 @@ export function SettingsConfirmDialog({
         aria-modal="true"
         aria-labelledby="settings-dialog-title"
         aria-describedby="settings-dialog-desc"
-        className="screen-enter relative z-10 w-full max-w-sm rounded-[var(--radius-card)] bg-[var(--surface-elevated)] p-[var(--sp-5)]"
+        className="screen-enter relative z-10 w-full max-w-sm rounded-[var(--settings-card-radius)] bg-[var(--surface-elevated)] p-5"
       >
         <p
           id="settings-dialog-title"
-          className="text-[length:var(--text-title)] font-semibold text-[var(--text-primary)]"
+          className="text-[17px] font-semibold text-[var(--text-primary)]"
         >
           {title}
         </p>
         <p
           id="settings-dialog-desc"
-          className="mt-[var(--sp-2)] text-[length:var(--text-secondary-size)] leading-[1.4] text-[var(--text-secondary)]"
+          className="mt-2 text-[14px] leading-[1.4] text-[var(--text-secondary)]"
         >
           {description}
         </p>
-        <div className="mt-[var(--sp-5)] flex flex-col gap-[var(--sp-2)]">
+        <div className="mt-5 flex flex-col gap-2">
           <button
             type="button"
             onClick={onConfirm}
             disabled={confirming}
-            className={`flex min-h-11 w-full items-center justify-center rounded-[var(--radius-input)] text-[length:var(--text-body)] font-semibold transition-opacity duration-150 ease-in-out disabled:opacity-40 ${
+            className={`flex min-h-11 w-full items-center justify-center rounded-[12px] text-[16px] font-semibold transition-opacity duration-150 ease-in-out disabled:opacity-40 ${
               destructive
-                ? "pressable text-[var(--destructive)]"
+                ? "pressable text-[var(--danger)]"
                 : "pressable bg-[var(--accent)] text-white active:bg-[var(--accent-pressed)]"
             }`}
           >
@@ -206,7 +250,7 @@ export function SettingsConfirmDialog({
             type="button"
             onClick={onCancel}
             disabled={confirming}
-            className="pressable flex min-h-11 w-full items-center justify-center rounded-[var(--radius-input)] text-[length:var(--text-body)] font-medium text-[var(--text-primary)] disabled:opacity-40"
+            className="pressable flex min-h-11 w-full items-center justify-center rounded-[12px] text-[16px] font-medium text-[var(--text-primary)] disabled:opacity-40"
           >
             {cancelLabel}
           </button>

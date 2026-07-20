@@ -41,8 +41,8 @@ function ReservedBox({
     <div
       className={`relative overflow-hidden ${
         isMine
-          ? "bg-[var(--accent)] text-white"
-          : "bg-[var(--surface-elevated)] text-[var(--text-secondary)]"
+          ? "bg-[var(--bubble-out)] text-white"
+          : "bg-[var(--surface)] text-[var(--text-secondary)]"
       }`}
       style={{ width, height, minWidth: width, minHeight: height }}
     >
@@ -382,7 +382,7 @@ const VideoAttachmentContent = memo(function VideoAttachmentContent({
       <div ref={rootRef}>
         <div
           className={`relative overflow-hidden ${
-            isMine ? "bg-[var(--accent)]" : "bg-[var(--surface-elevated)]"
+            isMine ? "bg-[var(--bubble-out)]" : "bg-[var(--surface)]"
           }`}
           style={{ width, height, minWidth: width, minHeight: height }}
         >

@@ -25,6 +25,8 @@ export type VoiceRecordingPayload = {
 };
 
 const UNDO_MS = 8000;
+/** ~5 lines at 16px / 1.35 line-height */
+const COMPOSER_MAX_HEIGHT_PX = Math.round(16 * 1.35 * 5);
 
 export function ChatComposer({
   onSend,
@@ -58,7 +60,7 @@ export function ChatComposer({
 
   const inputId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const textInputRef = useRef<HTMLInputElement>(null);
+  const textInputRef = useRef<HTMLTextAreaElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -71,6 +73,13 @@ export function ChatComposer({
 
   useEffect(() => {
     draftRef.current = draft;
+  }, [draft]);
+
+  useEffect(() => {
+    const el = textInputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT_PX)}px`;
   }, [draft]);
 
   useEffect(() => {
@@ -297,7 +306,7 @@ export function ChatComposer({
         setDraft("");
         onSend(text);
       }}
-      className="composer-bar shrink-0 border-t border-[var(--divider)] bg-[var(--bg)]"
+      className="composer-bar shrink-0 border-t border-[var(--row-separator)] bg-[var(--bg)]"
     >
       <div className="mx-auto flex w-full max-w-3xl flex-col px-[var(--sp-3)] py-[var(--sp-2)]">
         {inlineError ? (
@@ -329,7 +338,7 @@ export function ChatComposer({
             >
               <CloseIcon className="h-6 w-6" />
             </button>
-            <div className="flex min-h-10 flex-1 items-center justify-center gap-[var(--sp-2)] rounded-[var(--radius-input)] border border-[var(--divider)] bg-[var(--surface)] px-[var(--sp-3)] py-[var(--sp-2)]">
+            <div className="flex min-h-10 flex-1 items-center justify-center gap-[var(--sp-2)] rounded-[22px] bg-[var(--surface)] px-[var(--sp-3)] py-[var(--sp-2)]">
               <span
                 className="record-pulse h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--destructive)]"
                 aria-hidden
@@ -352,7 +361,7 @@ export function ChatComposer({
             </button>
           </div>
         ) : (
-          <div className="flex items-end gap-[var(--sp-2)]">
+          <div className="flex items-end gap-[var(--sp-1)]">
             <input
               ref={fileInputRef}
               id={inputId}
@@ -372,37 +381,51 @@ export function ChatComposer({
               disabled={attachDisabled}
               aria-label="Attach photo or video"
               onClick={() => fileInputRef.current?.click()}
-              className="pressable flex h-11 w-11 shrink-0 items-center justify-center text-[var(--text-secondary)] disabled:opacity-40"
+              className="pressable flex h-10 w-10 shrink-0 items-center justify-center text-[var(--text-secondary)] disabled:opacity-40"
             >
-              <PlusIcon className="h-9 w-9" strokeWidth={1.75} />
+              <PlusIcon className="h-7 w-7" strokeWidth={1.75} />
             </button>
             {showAssistButton ? (
               <button
                 type="button"
                 aria-label="Message assistant"
                 onClick={handleAssistTap}
-                className="pressable flex h-11 w-11 shrink-0 items-center justify-center text-[var(--text-secondary)]"
+                className="pressable flex h-10 w-10 shrink-0 items-center justify-center text-[var(--text-secondary)]"
               >
                 <SparkleIcon className="h-5 w-5" />
               </button>
             ) : null}
-            <input
+            <textarea
               ref={textInputRef}
               value={draft}
+              rows={1}
+              enterKeyHint="send"
               onChange={(e) => {
                 clearUndo();
                 setDraft(e.target.value);
               }}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" || e.shiftKey) return;
+                // Avoid double-submit on mobile software keyboards that also
+                // synthesize a click; preventDefault keeps form submit path clean.
+                e.preventDefault();
+                if (disabled) return;
+                const text = draft.trim();
+                if (!text) return;
+                clearUndo();
+                setDraft("");
+                onSend(text);
+              }}
               placeholder="Message"
               autoComplete="off"
-              className="min-h-10 flex-1 rounded-[var(--radius-input)] border border-[var(--divider)] bg-[var(--surface)] px-[var(--sp-4)] py-[var(--sp-2)] text-[length:var(--text-body)] leading-[1.35] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none"
+              className="max-h-[calc(16px*1.35*5)] min-h-10 flex-1 resize-none overflow-y-auto rounded-[22px] bg-[var(--surface)] px-[14px] py-[10px] text-[16px] leading-[1.35] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none"
             />
             {canSend ? (
               <button
                 type="submit"
                 disabled={disabled}
                 aria-label="Send"
-                className="pressable flex h-11 w-11 shrink-0 items-center justify-center disabled:opacity-40"
+                className="pressable flex h-10 w-10 shrink-0 items-center justify-center disabled:opacity-40"
               >
                 <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--accent)] text-white">
                   <ArrowUpIcon className="h-[18px] w-[18px]" />
@@ -414,11 +437,9 @@ export function ChatComposer({
                 disabled={disabled || attachDisabled || !onVoiceSend}
                 aria-label="Record voice message"
                 onClick={() => void startRecording()}
-                className="pressable flex h-11 w-11 shrink-0 items-center justify-center text-[var(--text-secondary)] disabled:opacity-40"
+                className="pressable flex h-10 w-10 shrink-0 items-center justify-center text-[var(--text-secondary)] disabled:opacity-40"
               >
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--accent)] text-white">
-                  <MicIcon className="h-[18px] w-[18px]" />
-                </span>
+                <MicIcon className="h-[22px] w-[22px]" />
               </button>
             )}
           </div>

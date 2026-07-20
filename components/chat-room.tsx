@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronLeftIcon, LockIcon } from "@/components/icons";
+import { ChevronLeftIcon } from "@/components/icons";
 import { ContactDetail } from "@/components/contact-detail";
 import { useKeyGate } from "@/components/key-gate";
 import { useNicknames } from "@/components/nicknames-context";
@@ -27,6 +27,10 @@ import { ChatComposer, type VoiceRecordingPayload } from "@/components/chat-comp
 import { PhotoViewerHostProvider } from "@/components/photo-viewer-host";
 import { useVisualViewport } from "@/hooks/useVisualViewport";
 import { useConversationAnchoring } from "@/hooks/useConversationAnchoring";
+import {
+  markReadIfVisible,
+  useMarkConversationRead,
+} from "@/hooks/useMarkConversationRead";
 import {
   PAGE_SIZE,
   captureScrollAnchor,
@@ -183,6 +187,12 @@ export function ChatRoom() {
     scrollToBottom,
     isNearBottom,
   } = useConversationAnchoring(
+    conversationId,
+    status === "ready" && loadedConversationId === conversationId,
+  );
+
+  useMarkConversationRead(
+    "dm",
     conversationId,
     status === "ready" && loadedConversationId === conversationId,
   );
@@ -501,6 +511,7 @@ export function ChatRoom() {
                   if (prev.some((m) => m.id === display.id)) return prev;
                   return [...prev, display];
                 });
+                markReadIfVisible("dm", conversationId);
               })();
             },
           )
@@ -1042,7 +1053,7 @@ export function ChatRoom() {
   return (
     <PhotoViewerHostProvider hostRef={photoViewerHostRef}>
     <div className="screen-enter relative flex h-app min-h-0 w-full min-w-0 flex-col overflow-x-hidden bg-[var(--bg)] md:h-full md:flex-1">
-      <header className="safe-pt shrink-0 border-b border-[var(--divider)] bg-[var(--bg)]">
+      <header className="safe-pt shrink-0 border-b border-[var(--row-separator)] bg-[var(--bg)]">
         <div className="flex h-[52px] items-center gap-[var(--sp-2)] px-[var(--sp-3)]">
           <Link
             href="/chats"
@@ -1055,16 +1066,12 @@ export function ChatRoom() {
             type="button"
             onClick={() => setContactDetailOpen(true)}
             disabled={!otherUserId}
-            className="row-press flex min-h-11 min-w-0 flex-1 items-center gap-[var(--sp-2)] rounded-[var(--radius-input)] text-left disabled:opacity-60"
+            className="row-press flex min-h-11 min-w-0 flex-1 items-center gap-[var(--sp-3)] rounded-[var(--radius-input)] text-left disabled:opacity-60"
           >
-            <Avatar avatarId={otherAvatarId} size={32} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[length:var(--text-title)] font-semibold leading-tight text-[var(--text-primary)]">
+            <Avatar avatarId={otherAvatarId} size={36} />
+            <div className="flex min-w-0 flex-1 flex-col justify-center">
+              <p className="truncate text-[16px] font-semibold leading-tight text-[var(--text-primary)]">
                 {otherDisplayName}
-              </p>
-              <p className="flex items-center gap-[var(--sp-1)] text-[length:var(--text-caption)] leading-tight text-[var(--text-secondary)]">
-                <LockIcon className="h-3 w-3 shrink-0" />
-                End-to-end encrypted
               </p>
             </div>
           </button>

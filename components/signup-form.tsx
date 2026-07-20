@@ -8,6 +8,7 @@ import {
   AuthPrimaryButton,
   AuthScreenHeading,
   AuthTextField,
+  passwordStrengthTone,
 } from "@/components/auth-ui";
 import {
   CheckIcon,
@@ -190,7 +191,7 @@ export function SignupForm() {
         <AuthBrandHeader subtitle="Private messaging. End-to-end encrypted." />
         <AuthScreenHeading title="Create your account" progress="1 of 2" />
 
-        <div className="mt-[var(--sp-6)] space-y-[var(--sp-4)]">
+        <div className="mt-[var(--sp-6)] flex flex-col gap-3">
           <AuthTextField
             id="username"
             name="username"
@@ -246,6 +247,7 @@ export function SignupForm() {
             onEnterKey={() => confirmRef.current?.focus()}
             error={fieldErrors.password}
             hint={strength || null}
+            hintTone={passwordStrengthTone(strength)}
             required
             minLength={10}
           />
@@ -284,9 +286,6 @@ export function SignupForm() {
           <AuthPrimaryButton type="submit" disabled={!step1Valid}>
             Continue
           </AuthPrimaryButton>
-        </div>
-
-        <div className="mt-[var(--sp-4)]">
           <AuthFooterLink
             text="Already have an account?"
             linkText="Log in"
@@ -346,20 +345,20 @@ export function SignupForm() {
         })}
       </div>
 
-      <div className="mt-[var(--sp-6)] rounded-[var(--radius-card)] border border-[var(--warning-border)] bg-[var(--warning-bg)] p-[var(--sp-4)]">
-        <div className="flex gap-[var(--sp-3)]">
+      <div className="mt-[var(--sp-6)] rounded-[12px] border border-[var(--warning-muted-border)] bg-[var(--surface)] p-4">
+        <div className="flex gap-3">
           <WarningTriangleIcon className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent)]" />
           <div className="min-w-0 flex-1">
-            <p className="text-[length:var(--text-body)] font-semibold text-[var(--text-primary)]">
+            <p className="text-[14px] font-semibold leading-[1.4] text-[var(--text-primary)]">
               Save your password
             </p>
-            <p className="mt-[var(--sp-1)] text-[length:var(--text-secondary-size)] leading-[1.4] text-[var(--text-primary)]">
+            <p className="mt-1 text-[14px] leading-[1.4] text-[var(--text-secondary)]">
               Celesth does not use email, so your password cannot be reset. Store
               it somewhere safe.
             </p>
           </div>
         </div>
-        <label className="mt-[var(--sp-4)] flex min-h-11 cursor-pointer items-center gap-[var(--sp-3)] text-[length:var(--text-secondary-size)] text-[var(--text-primary)]">
+        <label className="mt-4 flex min-h-11 cursor-pointer items-center gap-3 text-[14px] text-[var(--text-primary)]">
           <input
             type="checkbox"
             checked={acknowledged}
@@ -373,21 +372,15 @@ export function SignupForm() {
       </div>
 
       {error ? (
-        <p
-          className="mt-[var(--sp-4)] text-[length:var(--text-secondary-size)] text-[var(--destructive)]"
-          role="alert"
-        >
+        <p className="mt-4 text-[13px] text-[var(--danger)]" role="alert">
           {error}
         </p>
       ) : null}
 
       <div className="mt-[var(--sp-6)]">
         <AuthPrimaryButton disabled={!canSubmit} loading={busy}>
-          {busy ? "Creating account…" : "Create account"}
+          Create account
         </AuthPrimaryButton>
-      </div>
-
-      <div className="mt-[var(--sp-4)]">
         <AuthFooterLink
           text="Already have an account?"
           linkText="Log in"

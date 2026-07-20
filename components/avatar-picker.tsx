@@ -18,7 +18,7 @@ export function AvatarPicker({
 }) {
   const grid =
     columns === "settings"
-      ? "grid-cols-4 gap-[var(--sp-3)]"
+      ? "grid-cols-4 gap-3"
       : "grid-cols-4 gap-2.5 sm:grid-cols-6 sm:gap-3";
 
   return (
@@ -43,7 +43,7 @@ export function AvatarPicker({
           >
             <Avatar avatarId={avatar.id} size={size} />
             {selected ? (
-              <span className="absolute bottom-0 right-0 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent)] text-white ring-2 ring-[var(--surface-elevated)]">
+              <span className="absolute bottom-0 right-0 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent)] text-white ring-2 ring-[var(--surface)]">
                 <CheckIcon className="h-3 w-3" />
               </span>
             ) : null}

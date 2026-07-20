@@ -113,7 +113,12 @@ export async function fetchGroupPreview(
   myUserId: string,
   myPrivateKey: string,
   fallbackActivity: string,
-): Promise<{ lastActivity: string; lastPreview: string }> {
+): Promise<{
+  lastActivity: string;
+  lastPreview: string;
+  lastSenderId: string | null;
+  lastSenderUsername: string | null;
+}> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("group_messages")
@@ -127,13 +132,18 @@ export async function fetchGroupPreview(
     .maybeSingle();
 
   if (error || !data) {
-    return { lastActivity: fallbackActivity, lastPreview: "No messages yet" };
+    return {
+      lastActivity: fallbackActivity,
+      lastPreview: "No messages yet",
+      lastSenderId: null,
+      lastSenderUsername: null,
+    };
   }
 
   const row = data as GroupMessageRow;
   const { data: senderProfile } = await supabase
     .from("profiles")
-    .select("public_key")
+    .select("public_key, username")
     .eq("id", row.sender_id)
     .maybeSingle();
 
@@ -149,6 +159,8 @@ export async function fetchGroupPreview(
       decrypted.decryptFailed === true
         ? "Encrypted message"
         : messagePreviewText(decrypted.body),
+    lastSenderId: row.sender_id,
+    lastSenderUsername: (senderProfile?.username as string | null) ?? null,
   };
 }
 

@@ -147,7 +147,7 @@ export const VoiceMessageBubble = memo(function VoiceMessageBubble({
   if (isPending || !path) {
     return (
       <div
-        className={`flex min-w-[200px] items-center gap-[var(--sp-3)] px-3 py-2.5 opacity-60`}
+        className={`flex min-w-[200px] items-center gap-[var(--sp-3)] px-[14px] py-[10px] opacity-60`}
       >
         <span
           className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
@@ -175,7 +175,7 @@ export const VoiceMessageBubble = memo(function VoiceMessageBubble({
 
   if (fetchState.kind === "decrypt-failed") {
     return (
-      <div className="min-w-[200px] px-3 py-2.5 text-[length:var(--text-caption)] font-medium">
+      <div className="min-w-[200px] px-[14px] py-[10px] text-[length:var(--text-caption)] font-medium">
         <span className={isMine ? "text-white/90" : "text-[var(--text-secondary)]"}>
           Couldn&apos;t decrypt
         </span>
@@ -185,7 +185,7 @@ export const VoiceMessageBubble = memo(function VoiceMessageBubble({
 
   if (fetchState.kind === "playback-failed") {
     return (
-      <div className="flex min-w-[200px] items-center gap-[var(--sp-3)] px-3 py-2.5">
+      <div className="flex min-w-[200px] items-center gap-[var(--sp-3)] px-[14px] py-[10px]">
         <button
           type="button"
           aria-label="Retry playback"
@@ -208,7 +208,7 @@ export const VoiceMessageBubble = memo(function VoiceMessageBubble({
   }
 
   return (
-    <div className="relative flex min-w-[200px] max-w-[260px] items-center gap-[var(--sp-2)] px-3 py-2.5">
+    <div className="relative flex min-w-[200px] max-w-[260px] items-center gap-[var(--sp-2)] px-[14px] py-[10px]">
       <button
         type="button"
         aria-label={isPlaying ? "Pause voice message" : "Play voice message"}
@@ -216,7 +216,7 @@ export const VoiceMessageBubble = memo(function VoiceMessageBubble({
         onClick={() => void handlePlayPause()}
         className={`pressable flex h-9 w-9 shrink-0 items-center justify-center rounded-full disabled:opacity-60 ${
           isMine
-            ? "bg-white text-[var(--accent)]"
+            ? "bg-white text-[var(--bubble-out)]"
             : "bg-[var(--accent)] text-white"
         }`}
       >
