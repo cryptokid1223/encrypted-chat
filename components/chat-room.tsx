@@ -89,11 +89,7 @@ export function ChatRoom() {
     scrollToBottom();
   }, [messages, isNearBottom, scrollToBottom]);
 
-  const scrollIfNearBottom = useCallback(() => {
-    if (isNearBottom()) scrollToBottom();
-  }, [isNearBottom, scrollToBottom]);
-
-  useVisualViewport(scrollIfNearBottom);
+  useVisualViewport(scrollToBottom);
 
   useEffect(() => {
     let cancelled = false;
