@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { SendIcon } from "@/components/icons";
+import { ArrowUpIcon } from "@/components/icons";
 
 export function ChatComposer({
   onSend,
@@ -24,23 +24,25 @@ export function ChatComposer({
         setDraft("");
         onSend(text);
       }}
-      className="composer-bar shrink-0 border-t border-[#2E2B28] bg-[#1A1816]"
+      className="composer-bar shrink-0 border-t border-[var(--divider)] bg-[var(--bg)]"
     >
-      <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-2 py-1.5">
+      <div className="mx-auto flex w-full max-w-3xl items-end gap-[var(--sp-2)] px-[var(--sp-3)] py-[var(--sp-2)]">
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Message"
           autoComplete="off"
-          className="min-h-[44px] flex-1 rounded-full border border-[#2E2B28] bg-[#242220] px-4 py-2.5 text-[16px] leading-[1.4] text-[#FAFAF9] placeholder:text-[#6E6963] outline-none transition-[border-color] duration-150 ease-in-out focus:border-[#EA580C]"
+          className="min-h-10 flex-1 rounded-[var(--radius-input)] border border-[var(--divider)] bg-[var(--surface)] px-[var(--sp-4)] py-[var(--sp-2)] text-[length:var(--text-body)] leading-[1.35] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none"
         />
         <button
           type="submit"
           disabled={disabled || !canSend}
           aria-label="Send"
-          className="flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-full bg-[#EA580C] text-white transition-colors duration-150 ease-in-out hover:bg-[#C2410C] disabled:opacity-30"
+          className="flex h-11 w-11 shrink-0 items-center justify-center active:opacity-70 disabled:opacity-40"
         >
-          <SendIcon className="h-5 w-5" />
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--accent)] text-white transition-colors duration-150 ease-in-out active:bg-[var(--accent-pressed)]">
+            <ArrowUpIcon className="h-[18px] w-[18px]" />
+          </span>
         </button>
       </div>
     </form>

@@ -9,12 +9,42 @@ export type MessageBubbleProps = {
   isMine: boolean;
   timestamp: string;
   showDayDivider: boolean;
-  showTimestamp: boolean;
-  bubbleRadius: string;
-  marginTop: number;
+  isFirstInGroup: boolean;
+  isLastInGroup: boolean;
+  isPending?: boolean;
   failed?: boolean;
   onRetry?: (id: string) => void;
 };
+
+function bubbleRadiusClass(
+  isMine: boolean,
+  isFirstInGroup: boolean,
+  isLastInGroup: boolean,
+): string {
+  if (isMine) {
+    if (isFirstInGroup && isLastInGroup) {
+      return "rounded-[18px] rounded-br-[6px]";
+    }
+    if (isFirstInGroup) {
+      return "rounded-[18px] rounded-br-[6px]";
+    }
+    if (isLastInGroup) {
+      return "rounded-[18px] rounded-tr-[6px] rounded-br-[6px]";
+    }
+    return "rounded-[18px] rounded-tr-[6px] rounded-br-[6px]";
+  }
+
+  if (isFirstInGroup && isLastInGroup) {
+    return "rounded-[18px] rounded-bl-[6px]";
+  }
+  if (isFirstInGroup) {
+    return "rounded-[18px] rounded-bl-[6px]";
+  }
+  if (isLastInGroup) {
+    return "rounded-[18px] rounded-tl-[6px] rounded-bl-[6px]";
+  }
+  return "rounded-[18px] rounded-tl-[6px] rounded-bl-[6px]";
+}
 
 export const MessageBubble = memo(function MessageBubble({
   id,
@@ -22,38 +52,44 @@ export const MessageBubble = memo(function MessageBubble({
   isMine,
   timestamp,
   showDayDivider,
-  showTimestamp,
-  bubbleRadius,
-  marginTop,
+  isFirstInGroup,
+  isLastInGroup,
+  isPending,
   failed,
   onRetry,
 }: MessageBubbleProps) {
+  const radiusClass = bubbleRadiusClass(isMine, isFirstInGroup, isLastInGroup);
+  const groupGap = isFirstInGroup ? "var(--sp-3)" : "2px";
+
   return (
     <>
       {showDayDivider ? (
-        <div className="my-4 flex justify-center">
-          <span className="text-[12px] text-[#6E6963]">
+        <div
+          className="flex justify-center"
+          style={{ margin: "var(--sp-4) 0" }}
+        >
+          <span className="rounded-[10px] bg-[var(--surface)] px-[10px] py-1 text-[length:var(--text-caption)] text-[var(--text-secondary)]">
             {formatDayDivider(timestamp)}
           </span>
         </div>
       ) : null}
       <div
         className={`flex flex-col ${isMine ? "items-end" : "items-start"}`}
-        style={{ marginTop }}
+        style={{ marginTop: showDayDivider ? 0 : groupGap }}
       >
         <div
-          className={`flex max-w-[65%] flex-col gap-1 ${
+          className={`flex max-w-[75%] flex-col gap-[var(--sp-1)] ${
             isMine ? "items-end" : "items-start"
           }`}
         >
           <div
-            className={`px-[14px] py-[10px] text-[15px] leading-[1.4] ${bubbleRadius} ${
+            className={`px-3 py-2 text-[length:var(--text-body)] leading-[1.35] break-words whitespace-pre-wrap ${radiusClass} ${
               isMine
                 ? failed
-                  ? "bg-[#EA580C]/60 text-white"
-                  : "bg-[#EA580C] text-white"
-                : "bg-[#242220] text-[#FAFAF9]"
-            }`}
+                  ? "bg-[var(--accent)]/60 text-white"
+                  : "bg-[var(--accent)] text-white"
+                : "bg-[var(--surface-elevated)] text-[var(--text-primary)]"
+            } ${isPending ? "opacity-70" : ""}`}
           >
             {body}
           </div>
@@ -61,14 +97,18 @@ export const MessageBubble = memo(function MessageBubble({
             <button
               type="button"
               onClick={() => onRetry(id)}
-              className="text-[11px] font-medium text-red-400 transition-colors duration-150 ease-in-out hover:text-red-300"
+              className="text-[length:var(--text-caption)] font-medium text-[var(--destructive)] transition-opacity duration-150 ease-in-out active:opacity-70"
             >
               Tap to retry
             </button>
           ) : null}
         </div>
-        {showTimestamp ? (
-          <span className="mt-1 px-1 text-[11px] text-[#6E6963]">
+        {isLastInGroup ? (
+          <span
+            className={`mt-[var(--sp-1)] px-[var(--sp-1)] text-[length:var(--text-caption)] text-[var(--text-secondary)] ${
+              isMine ? "text-right" : "text-left"
+            }`}
+          >
             {formatMessageTime(timestamp)}
           </span>
         ) : null}

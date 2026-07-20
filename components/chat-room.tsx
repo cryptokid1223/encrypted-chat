@@ -7,7 +7,7 @@ import { ChevronLeftIcon, LockIcon } from "@/components/icons";
 import { ContactDetail } from "@/components/contact-detail";
 import { useKeyGate } from "@/components/key-gate";
 import { useNicknames } from "@/components/nicknames-context";
-import { isSameCalendarDay, isSameMessageGroup } from "@/lib/chat";
+import { isSameCalendarDay } from "@/lib/chat";
 import { encryptMessage } from "@/lib/crypto";
 import { Avatar } from "@/lib/avatars";
 import {
@@ -36,6 +36,22 @@ type DisplayMessage = {
   createdAt: string;
   failed?: boolean;
 };
+
+/** Render-layer grouping: same sender within 60 seconds. */
+function isSameRenderGroup(
+  aSender: string,
+  aTime: string,
+  bSender: string,
+  bTime: string,
+): boolean {
+  if (aSender !== bSender) return false;
+  const diff = Math.abs(new Date(aTime).getTime() - new Date(bTime).getTime());
+  return diff <= 60 * 1000;
+}
+
+function isOptimisticPending(id: string): boolean {
+  return id.startsWith("local:");
+}
 
 export function ChatRoom() {
   const params = useParams<{ conversationId: string }>();
@@ -431,13 +447,13 @@ export function ChatRoom() {
   const otherHasNickname = hasNickname(otherIdentity);
 
   return (
-    <div className="flex h-app min-h-0 w-full flex-col bg-[#0F0E0D] md:h-full md:flex-1">
-      <div className="safe-pt shrink-0 border-b border-[#2E2B28] bg-[#1A1816]">
-        <div className="flex h-14 items-center gap-2.5 px-3">
+    <div className="flex h-app min-h-0 w-full flex-col bg-[var(--bg)] md:h-full md:flex-1">
+      <header className="safe-pt shrink-0 border-b border-[var(--divider)] bg-[var(--bg)]">
+        <div className="flex h-[52px] items-center gap-[var(--sp-2)] px-[var(--sp-3)]">
           <Link
             href="/chats"
             aria-label="Back to chats"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[#6E6963] transition-colors duration-150 ease-in-out hover:bg-[#242220] hover:text-[#FAFAF9] md:hidden"
+            className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--text-secondary)] transition-opacity duration-150 ease-in-out active:opacity-70 md:hidden"
           >
             <ChevronLeftIcon className="h-5 w-5" />
           </Link>
@@ -445,46 +461,40 @@ export function ChatRoom() {
             type="button"
             onClick={() => setContactDetailOpen(true)}
             disabled={!otherUserId}
-            className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2.5 rounded-xl text-left transition-colors duration-150 ease-in-out hover:bg-[#242220]/50 active:bg-[#242220] disabled:opacity-60"
+            className="flex min-h-11 min-w-0 flex-1 items-center gap-[var(--sp-2)] text-left transition-opacity duration-150 ease-in-out active:opacity-70 disabled:opacity-60"
           >
             <Avatar avatarId={otherAvatarId} size={32} />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[15px] font-semibold leading-[1.4] text-[#FAFAF9]">
+              <p className="truncate text-[length:var(--text-title)] font-semibold leading-tight text-[var(--text-primary)]">
                 {otherDisplayName}
               </p>
-              {otherHasNickname ? (
-                <p className="truncate text-[12px] leading-[1.4] text-[#6E6963]">
-                  {formatAtUsername(otherUsername)}
-                </p>
-              ) : (
-                <p className="flex items-center gap-1 text-[12px] leading-[1.4] text-[#6E6963]">
-                  <LockIcon className="h-3 w-3" />
-                  End-to-end encrypted
-                </p>
-              )}
+              <p className="flex items-center gap-[var(--sp-1)] text-[length:var(--text-caption)] leading-tight text-[var(--text-secondary)]">
+                <LockIcon className="h-3 w-3 shrink-0" />
+                End-to-end encrypted
+              </p>
             </div>
           </button>
         </div>
-      </div>
+      </header>
 
       <div
         ref={scrollerRef}
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--bg)]"
         style={{ WebkitOverflowScrolling: "touch", overscrollBehavior: "none" }}
       >
-        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-3">
+        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-[var(--sp-3)] pb-[var(--sp-2)] pt-[var(--sp-2)]">
           {messages.length === 0 ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
+            <div className="flex flex-1 flex-col items-center justify-center gap-[var(--sp-2)] text-center">
               <Avatar avatarId={otherAvatarId} size={48} />
-              <p className="text-[14px] font-medium text-[#FAFAF9]">
+              <p className="text-[length:var(--text-secondary-size)] font-semibold text-[var(--text-primary)]">
                 {otherDisplayName}
               </p>
               {otherHasNickname ? (
-                <p className="text-[13px] text-[#6E6963]">
+                <p className="text-[length:var(--text-secondary-size)] text-[var(--text-secondary)]">
                   {formatAtUsername(otherUsername)}
                 </p>
               ) : null}
-              <p className="max-w-[220px] text-[13px] leading-[1.4] text-[#6E6963]">
+              <p className="max-w-[220px] text-[length:var(--text-secondary-size)] leading-[1.4] text-[var(--text-secondary)]">
                 Messages are end-to-end encrypted.
               </p>
             </div>
@@ -496,7 +506,7 @@ export function ChatRoom() {
                 const next = messages[i + 1];
 
                 const sameGroupPrev = prev
-                  ? isSameMessageGroup(
+                  ? isSameRenderGroup(
                       prev.senderId,
                       prev.createdAt,
                       m.senderId,
@@ -504,7 +514,7 @@ export function ChatRoom() {
                     )
                   : false;
                 const sameGroupNext = next
-                  ? isSameMessageGroup(
+                  ? isSameRenderGroup(
                       m.senderId,
                       m.createdAt,
                       next.senderId,
@@ -512,20 +522,11 @@ export function ChatRoom() {
                     )
                   : false;
 
+                const isFirstInGroup = !sameGroupPrev;
+                const isLastInGroup = !sameGroupNext;
+
                 const showDayDivider =
                   !prev || !isSameCalendarDay(prev.createdAt, m.createdAt);
-
-                const bubbleRadius = mine
-                  ? sameGroupPrev && sameGroupNext
-                    ? "rounded-[18px] rounded-r-[4px]"
-                    : sameGroupPrev
-                      ? "rounded-[18px] rounded-tr-[4px]"
-                      : "rounded-[18px] rounded-br-[4px]"
-                  : sameGroupPrev && sameGroupNext
-                    ? "rounded-[18px] rounded-l-[4px]"
-                    : sameGroupPrev
-                      ? "rounded-[18px] rounded-tl-[4px]"
-                      : "rounded-[18px] rounded-bl-[4px]";
 
                 return (
                   <li key={m.id}>
@@ -535,11 +536,9 @@ export function ChatRoom() {
                       isMine={mine}
                       timestamp={m.createdAt}
                       showDayDivider={showDayDivider}
-                      showTimestamp={!sameGroupNext}
-                      bubbleRadius={bubbleRadius}
-                      marginTop={
-                        showDayDivider ? 0 : sameGroupPrev ? 2 : 16
-                      }
+                      isFirstInGroup={isFirstInGroup}
+                      isLastInGroup={isLastInGroup}
+                      isPending={isOptimisticPending(m.id)}
                       failed={m.failed}
                       onRetry={handleRetry}
                     />
