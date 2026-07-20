@@ -22,6 +22,7 @@ import {
 } from "@/lib/groupMessages";
 import { Avatar, AVATARS } from "@/lib/avatars";
 import { createClient } from "@/lib/supabase/client";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 
 type ConversationRow = {
   id: string;
@@ -133,6 +134,49 @@ function ListSkeleton() {
   );
 }
 
+function PullRefreshSpinner({
+  progress,
+  refreshing,
+}: {
+  progress: number;
+  refreshing: boolean;
+}) {
+  const opacity = refreshing ? 1 : Math.min(1, progress);
+  if (opacity <= 0) return null;
+
+  return (
+    <div
+      className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center pt-[var(--sp-2)]"
+      style={{ opacity }}
+      aria-hidden
+    >
+      <svg
+        className={`h-5 w-5 text-[var(--text-secondary)] ${refreshing ? "animate-spin" : ""}`}
+        style={
+          refreshing ? undefined : { transform: `rotate(${progress * 360}deg)` }
+        }
+        viewBox="0 0 24 24"
+        fill="none"
+      >
+        <circle
+          cx="12"
+          cy="12"
+          r="10"
+          stroke="currentColor"
+          strokeWidth="3"
+          opacity="0.25"
+        />
+        <path
+          d="M12 2a10 10 0 0 1 10 10"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeLinecap="round"
+        />
+      </svg>
+    </div>
+  );
+}
+
 const ConversationRowItem = memo(function ConversationRowItem({
   id,
   otherUsername,
@@ -236,7 +280,7 @@ export function ChatList({
   activeConversationId?: string | null;
   activeGroupId?: string | null;
 }) {
-  const { avatarId } = useProfile();
+  const { avatarId, refreshProfile } = useProfile();
   const { nicknames, loaded: nicknamesLoaded, loadNicknames } = useNicknames();
   const [composeOpen, setComposeOpen] = useState(false);
   const [loadingList, setLoadingList] = useState(true);
@@ -532,6 +576,16 @@ export function ChatList({
       setLoadingList(false);
     }
   }, [loadNicknames]);
+
+  const handlePullRefresh = useCallback(async () => {
+    await Promise.all([loadConversations(), refreshProfile()]);
+  }, [loadConversations, refreshProfile]);
+
+  const {
+    contentStyle: pullContentStyle,
+    progress: pullProgress,
+    refreshing: pullRefreshing,
+  } = usePullToRefresh(scrollRef, handlePullRefresh, !loadingList);
 
   const upsertConversationFromRow = useCallback(
     async (row: ConversationInsert) => {
@@ -899,8 +953,13 @@ export function ChatList({
       <div
         ref={scrollRef}
         onScroll={handleListScroll}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
       >
+        <PullRefreshSpinner
+          progress={pullProgress}
+          refreshing={pullRefreshing}
+        />
+        <div style={pullContentStyle}>
         {showLoading ? (
           <ListSkeleton />
         ) : (
@@ -977,6 +1036,7 @@ export function ChatList({
             )}
           </>
         )}
+        </div>
       </div>
 
       <NewChatModal
