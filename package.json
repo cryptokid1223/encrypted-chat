@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:filecrypto": "npx tsx scripts/testFileCrypto.ts"
+    "test:filecrypto": "npx tsx scripts/testFileCrypto.ts",
+    "test:keywrap": "npx tsx scripts/testKeyWrap.ts"
   },
   "dependencies": {
     "@capacitor/cli": "^8.4.2",
