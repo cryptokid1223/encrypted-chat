@@ -13,6 +13,7 @@ export type GroupMessageRow = {
   ciphertext: string;
   nonce: string;
   created_at: string;
+  edit_of?: string | null;
 };
 
 export type DecryptedGroupMessage = {
@@ -21,6 +22,9 @@ export type DecryptedGroupMessage = {
   senderId: string;
   body: string;
   createdAt: string;
+  editOf?: string | null;
+  edited?: boolean;
+  editAppliedAt?: string;
   decryptFailed?: boolean;
 };
 
@@ -42,6 +46,7 @@ export async function decryptGroupMessageRow(
       senderId: row.sender_id,
       body: cached,
       createdAt: row.created_at,
+      editOf: row.edit_of ?? null,
       decryptFailed: cached === "[unable to decrypt]",
     };
   }
@@ -73,6 +78,7 @@ export async function decryptGroupMessageRow(
       senderId: row.sender_id,
       body,
       createdAt: row.created_at,
+      editOf: row.edit_of ?? null,
     };
   } catch {
     const body = "[unable to decrypt]";
@@ -83,6 +89,7 @@ export async function decryptGroupMessageRow(
       senderId: row.sender_id,
       body,
       createdAt: row.created_at,
+      editOf: row.edit_of ?? null,
       decryptFailed: true,
     };
   }
@@ -120,46 +127,62 @@ export async function fetchGroupPreview(
   lastPreview: string;
   lastSenderId: string | null;
   lastSenderUsername: string | null;
+  lastMessageId: string;
 } | null> {
   const supabase = createClient();
-  let query = supabase
+  let baseQuery = supabase
     .from("group_messages")
     .select(
-      "id, group_id, message_uuid, sender_id, recipient_id, ciphertext, nonce, created_at",
+      "id, group_id, message_uuid, sender_id, recipient_id, ciphertext, nonce, created_at, edit_of",
     )
     .eq("group_id", groupId)
-    .eq("recipient_id", myUserId);
-  query = applyAfterClear(query, clearedAt ?? undefined);
-  const { data, error } = await query
+    .eq("recipient_id", myUserId)
+    .is("edit_of", null);
+  baseQuery = applyAfterClear(baseQuery, clearedAt ?? undefined);
+  const { data: base, error: baseError } = await baseQuery
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  if (error || !data) {
+  if (baseError || !base) {
     return null;
   }
 
-  const row = data as GroupMessageRow;
+  const baseRow = base as GroupMessageRow;
+  const { data: latestEdit } = await supabase
+    .from("group_messages")
+    .select(
+      "id, group_id, message_uuid, sender_id, recipient_id, ciphertext, nonce, created_at, edit_of",
+    )
+    .eq("group_id", groupId)
+    .eq("recipient_id", myUserId)
+    .eq("edit_of", baseRow.message_uuid)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const previewRow = (latestEdit ?? base) as GroupMessageRow;
   const { data: senderProfile } = await supabase
     .from("profiles")
     .select("public_key, username")
-    .eq("id", row.sender_id)
+    .eq("id", previewRow.sender_id)
     .maybeSingle();
 
   const decrypted = await decryptGroupMessageRow(
-    row,
+    previewRow,
     (senderProfile?.public_key as string | null) ?? null,
     myPrivateKey,
   );
 
   return {
-    lastActivity: row.created_at,
+    lastActivity: baseRow.created_at,
     lastPreview:
       decrypted.decryptFailed === true
         ? "Encrypted message"
         : messagePreviewText(decrypted.body),
-    lastSenderId: row.sender_id,
+    lastSenderId: baseRow.sender_id,
     lastSenderUsername: (senderProfile?.username as string | null) ?? null,
+    lastMessageId: baseRow.message_uuid,
   };
 }
 

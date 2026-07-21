@@ -13,8 +13,16 @@ import { encryptMessage } from "@/lib/crypto";
 import { encryptFile } from "@/lib/fileCrypto";
 import { uploadEncryptedAttachment } from "@/lib/attachmentStorage";
 import { ImageTooLargeError, processImageForSend, processVideoForSend, VideoTooLargeError, VideoUnsupportedError } from "@/lib/imageProcessing";
-import { buildAttachmentBody } from "@/lib/messageContent";
+import { buildAttachmentBody, parseMessageBody } from "@/lib/messageContent";
 import { stopVoicePlayback } from "@/lib/voicePlayer";
+import {
+  applyIncomingEdit,
+  buildEditBody,
+  canEditMessage,
+  editMetaFromMessage,
+  integrateMessageBatch,
+  mergeMessagesWithEdits,
+} from "@/lib/messageEdits";
 import { Avatar } from "@/lib/avatars";
 import {
   displayName,
@@ -63,6 +71,9 @@ type DisplayMessage = {
   senderId: string;
   body: string;
   createdAt: string;
+  editOf?: string | null;
+  edited?: boolean;
+  editAppliedAt?: string;
   failed?: boolean;
   localPreviewUrl?: string;
   pendingAttachment?: Pick<
@@ -70,6 +81,9 @@ type DisplayMessage = {
     "kind" | "w" | "h" | "durationMs"
   >;
 };
+
+const MESSAGE_SELECT =
+  "id, sender_id, ciphertext, nonce, created_at, edit_of";
 
 /** Render-layer grouping: same sender within 60 seconds. */
 function isSameRenderGroup(
@@ -148,7 +162,10 @@ export function ChatRoom() {
 
   // Own optimistic sends keyed by ciphertext|nonce so realtime can reconcile without decrypting.
   const pendingByCipherRef = useRef<
-    Map<string, { tempId: string; body: string }>
+    Map<
+      string,
+      { tempId: string; body: string; isEdit?: boolean; targetId?: string }
+    >
   >(new Map());
   const initialMessageIdsRef = useRef<Set<string> | null>(null);
   const [loadedConversationId, setLoadedConversationId] = useState<
@@ -160,6 +177,9 @@ export function ChatRoom() {
   const loadingOlderRef = useRef(false);
   const historyCursorRef = useRef<HistoryCursor | null>(null);
   const clearedAtRef = useRef<string | null>(null);
+  const pendingEditsRef = useRef<Map<string, DisplayMessage>>(new Map());
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editInitialText, setEditInitialText] = useState<string | null>(null);
   const pendingScrollAnchorRef = useRef<ScrollAnchor | null>(null);
   const conversationIdRef = useRef(conversationId);
 
@@ -180,6 +200,9 @@ export function ChatRoom() {
     pendingScrollAnchorRef.current = null;
     pendingFileRef.current.clear();
     pendingAudioRef.current.clear();
+    pendingEditsRef.current.clear();
+    setEditingMessageId(null);
+    setEditInitialText(null);
   }, [conversationId]);
 
   useEffect(() => {
@@ -269,7 +292,7 @@ export function ChatRoom() {
       const supabase = createClient();
       let query = supabase
         .from("messages")
-        .select("id, sender_id, ciphertext, nonce, created_at")
+        .select(MESSAGE_SELECT)
         .eq("conversation_id", conversationIdRef.current)
         .or(olderThanOrFilter(cursor));
       query = applyAfterClear(query, clearedAtRef.current);
@@ -308,7 +331,15 @@ export function ChatRoom() {
       if (fresh.length === 0) return;
 
       pendingScrollAnchorRef.current = captureScrollAnchor(scrollerRef.current);
-      setMessages((prev) => [...fresh, ...prev]);
+      const integrated = integrateMessageBatch(
+        messagesRef.current,
+        fresh,
+        pendingEditsRef.current,
+        clearedAtRef.current,
+        true,
+      );
+      pendingEditsRef.current = integrated.pendingEdits;
+      setMessages(integrated.messages);
     } finally {
       loadingOlderRef.current = false;
       setLoadingOlder(false);
@@ -431,7 +462,7 @@ export function ChatRoom() {
 
         let messagesQuery = supabase
           .from("messages")
-          .select("id, sender_id, ciphertext, nonce, created_at")
+          .select(MESSAGE_SELECT)
           .eq("conversation_id", conversationId);
         messagesQuery = applyAfterClear(messagesQuery, clearedAt);
         const { data: rows, error: messagesError } = await messagesQuery
@@ -455,6 +486,12 @@ export function ChatRoom() {
           privateKey,
         );
 
+        const merged = mergeMessagesWithEdits(
+          decrypted,
+          clearedAt,
+        );
+        pendingEditsRef.current = merged.pendingEdits;
+
         if (cancelled) return;
 
         for (const m of decrypted) {
@@ -475,7 +512,7 @@ export function ChatRoom() {
         setOtherUsername(otherProfile.username);
         setOtherUserId(otherId as string);
         setOtherAvatarId((otherProfile.avatar_id as string | null) ?? null);
-        setMessages(decrypted);
+        setMessages(merged.messages);
         setLoadedConversationId(conversationId);
         setStatus("ready");
 
@@ -494,9 +531,6 @@ export function ChatRoom() {
                 const row = payload.new as EncryptedMessageRow;
                 if (!row?.id || seenIdsRef.current.has(row.id)) return;
 
-                // Own optimistic send reconciliation:
-                // if we recognize the ciphertext+nonce pair, reuse our plaintext
-                // (and don't decrypt).
                 const myId = myUserIdRef.current;
                 if (myId && row.sender_id === myId) {
                   const cipherKey = `${row.ciphertext}|${row.nonce}`;
@@ -505,6 +539,9 @@ export function ChatRoom() {
                     pendingByCipherRef.current.delete(cipherKey);
                     seenIdsRef.current.add(row.id);
                     if (cancelled) return;
+                    if (pending.isEdit && pending.targetId) {
+                      return;
+                    }
                     setMessages((prev) =>
                       prev.map((m) =>
                         m.id === pending.tempId
@@ -525,6 +562,18 @@ export function ChatRoom() {
                 );
 
                 if (cancelled) return;
+
+                if (row.edit_of || editMetaFromMessage(display.body, row.edit_of)) {
+                  setMessages((prev) => {
+                    const applied = applyIncomingEdit(
+                      prev,
+                      display,
+                      clearedAtRef.current,
+                    );
+                    return applied ?? prev;
+                  });
+                  return;
+                }
 
                 setMessages((prev) => {
                   if (prev.some((m) => m.id === display.id)) return prev;
@@ -557,9 +606,14 @@ export function ChatRoom() {
     (
       text: string,
       existingId?: string,
-      options?: { manageSendingState?: boolean; preservePreview?: boolean },
+      options?: {
+        manageSendingState?: boolean;
+        preservePreview?: boolean;
+        editOf?: string;
+      },
     ) => {
       const manageSendingState = options?.manageSendingState !== false;
+      const editOf = options?.editOf;
       const myId = myUserIdRef.current;
       if (!myId) return;
 
@@ -567,27 +621,43 @@ export function ChatRoom() {
         existingId ??
         `local:${Date.now()}:${Math.random().toString(16).slice(2)}`;
       const optimisticCreatedAt = new Date().toISOString();
+      const plaintext = editOf ? buildEditBody(text, editOf) : text;
 
-      // Optimistic UI: show immediately (no decrypt, no waiting).
-      setMessages((prev) => {
-        if (existingId) {
-          return prev.map((m) =>
-            m.id === existingId
+      if (editOf) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === editOf
               ? {
                   ...m,
                   body: text,
-                  createdAt: optimisticCreatedAt,
+                  edited: true,
+                  editAppliedAt: optimisticCreatedAt,
                   failed: false,
                 }
               : m,
-          );
-        }
-        if (prev.some((m) => m.id === tempId)) return prev;
-        return [
-          ...prev,
-          { id: tempId, senderId: myId, body: text, createdAt: optimisticCreatedAt },
-        ];
-      });
+          ),
+        );
+      } else {
+        setMessages((prev) => {
+          if (existingId) {
+            return prev.map((m) =>
+              m.id === existingId
+                ? {
+                    ...m,
+                    body: text,
+                    createdAt: optimisticCreatedAt,
+                    failed: false,
+                  }
+                : m,
+            );
+          }
+          if (prev.some((m) => m.id === tempId)) return prev;
+          return [
+            ...prev,
+            { id: tempId, senderId: myId, body: text, createdAt: optimisticCreatedAt },
+          ];
+        });
+      }
 
       void (async () => {
         if (manageSendingState) {
@@ -612,14 +682,18 @@ export function ChatRoom() {
             throw new Error("Recipient public key missing");
           }
 
-          // Encrypt before insert so we know the ciphertext/nonce for reconciliation.
           const { ciphertext, nonce } = await encryptMessage(
-            text,
+            plaintext,
             theirKey,
             myKey,
           );
           cipherKey = `${ciphertext}|${nonce}`;
-          pendingByCipherRef.current.set(cipherKey, { tempId, body: text });
+          pendingByCipherRef.current.set(cipherKey, {
+            tempId: editOf ? `edit:${editOf}` : tempId,
+            body: text,
+            isEdit: Boolean(editOf),
+            targetId: editOf,
+          });
 
           const supabase = createClient();
           const { data: inserted, error: insertError } = await supabase
@@ -629,8 +703,9 @@ export function ChatRoom() {
               sender_id: myId,
               ciphertext,
               nonce,
+              edit_of: editOf ?? null,
             })
-            .select("id, sender_id, ciphertext, nonce, created_at")
+            .select(MESSAGE_SELECT)
             .single();
 
           if (insertError || !inserted) {
@@ -640,22 +715,23 @@ export function ChatRoom() {
           pendingByCipherRef.current.delete(cipherKey);
           seenIdsRef.current.add(inserted.id);
 
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === tempId
-                ? {
-                    ...m,
-                    id: inserted.id,
-                    createdAt: inserted.created_at,
-                    failed: false,
-                  }
-                : m,
-            ),
-          );
+          if (!editOf) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === tempId
+                  ? {
+                      ...m,
+                      id: inserted.id,
+                      createdAt: inserted.created_at,
+                      failed: false,
+                    }
+                  : m,
+              ),
+            );
+          }
           pendingFileRef.current.delete(tempId);
           pendingAudioRef.current.delete(tempId);
         } catch {
-          // If encryption/key is the issue, route to import screen.
           const myIdForKey = myUserIdRef.current;
           if (!myIdForKey || !(await hasPrivateKey(myIdForKey))) {
             requireKeyImport();
@@ -666,9 +742,15 @@ export function ChatRoom() {
             pendingByCipherRef.current.delete(cipherKey);
           }
 
-          setMessages((prev) =>
-            prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)),
-          );
+          if (editOf) {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === editOf ? { ...m, failed: true } : m)),
+            );
+          } else {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === tempId ? { ...m, failed: true } : m)),
+            );
+          }
         } finally {
           if (manageSendingState) {
             setSending(false);
@@ -998,10 +1080,28 @@ export function ChatRoom() {
 
   const handleSend = useCallback(
     (text: string) => {
+      if (editingMessageId) {
+        sendPlaintext(text, undefined, { editOf: editingMessageId });
+        setEditingMessageId(null);
+        setEditInitialText(null);
+        return;
+      }
       sendPlaintext(text);
     },
-    [sendPlaintext],
+    [sendPlaintext, editingMessageId],
   );
+
+  const startEditMessage = useCallback((message: DisplayMessage) => {
+    const parsed = parseMessageBody(message.body);
+    if (parsed.type !== "text") return;
+    setEditingMessageId(message.id);
+    setEditInitialText(parsed.text);
+  }, []);
+
+  const cancelEditMessage = useCallback(() => {
+    setEditingMessageId(null);
+    setEditInitialText(null);
+  }, []);
 
   const handleRetry = useCallback(
     (id: string) => {
@@ -1203,13 +1303,22 @@ export function ChatRoom() {
                       isPending={isOptimisticPending(m.id)}
                       animateIn={
                         initialMessageIdsRef.current !== null &&
-                        !initialMessageIdsRef.current.has(m.id)
+                        !initialMessageIdsRef.current.has(m.id) &&
+                        !m.edited
                       }
                       failed={m.failed}
+                      edited={m.edited}
                       localPreviewUrl={m.localPreviewUrl}
                       pendingAttachment={m.pendingAttachment}
                       attachmentCacheScope={attachmentScope}
                       onRetry={handleRetry}
+                      onEditRequest={
+                        mine &&
+                        canEditMessage(mine, m.body, m.createdAt) &&
+                        !editingMessageId
+                          ? () => startEditMessage(m)
+                          : undefined
+                      }
                     />
                   </li>
                 );
@@ -1227,6 +1336,8 @@ export function ChatRoom() {
         disabled={sending}
         attachDisabled={attachUploading}
         attachError={attachError}
+        editInitialText={editInitialText}
+        onCancelEdit={cancelEditMessage}
       />
 
       {contactDetailOpen && otherUserId ? (

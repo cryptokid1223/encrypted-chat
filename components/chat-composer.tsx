@@ -8,6 +8,7 @@ import {
 } from "@/components/ai-assist-prefs";
 import { ArrowUpIcon, CloseIcon, PlusIcon, MicIcon, SparkleIcon } from "@/components/icons";
 import { RewriteToneSheet } from "@/components/rewrite-tone-sheet";
+import { MessageEditBanner } from "@/components/message-actions";
 import { SettingsConfirmDialog } from "@/components/settings-ui";
 import { formatDurationMs } from "@/lib/messageContent";
 import {
@@ -36,6 +37,8 @@ export function ChatComposer({
   disabled,
   attachDisabled,
   attachError,
+  editInitialText,
+  onCancelEdit,
 }: {
   onSend: (text: string) => void;
   onFileSelected?: (file: File) => void;
@@ -45,6 +48,9 @@ export function ChatComposer({
   disabled?: boolean;
   attachDisabled?: boolean;
   attachError?: string | null;
+  /** When set, composer enters edit mode with this text. */
+  editInitialText?: string | null;
+  onCancelEdit?: () => void;
 }) {
   const handleFile = onFileSelected ?? onPhotoSelected;
   const [draft, setDraft] = useState("");
@@ -70,6 +76,8 @@ export function ChatComposer({
   const finishingRef = useRef(false);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftRef = useRef(draft);
+  const preEditDraftRef = useRef("");
+  const editSessionRef = useRef<string | null>(null);
 
   useEffect(() => {
     draftRef.current = draft;
@@ -130,11 +138,13 @@ export function ChatComposer({
 
   const canSend = useMemo(() => draft.trim().length > 0, [draft]);
   const inlineError = attachError ?? permissionError;
+  const isEditing = editInitialText != null;
   const showAssistButton =
     assistEnabled &&
     draft.length >= 1 &&
     !recording &&
-    !attachDisabled;
+    !attachDisabled &&
+    !isEditing;
 
   const finishRecording = useCallback(
     async (send: boolean) => {
@@ -263,6 +273,39 @@ export function ChatComposer({
     el.setSelectionRange(len, len);
   }
 
+  function handleCancelEdit() {
+    if (editInitialText == null) return;
+    setDraft(preEditDraftRef.current);
+    preEditDraftRef.current = "";
+    editSessionRef.current = null;
+    onCancelEdit?.();
+  }
+
+  useEffect(() => {
+    if (editInitialText == null) {
+      editSessionRef.current = null;
+      return;
+    }
+    if (editSessionRef.current === editInitialText) return;
+    preEditDraftRef.current = draftRef.current;
+    editSessionRef.current = editInitialText;
+    setDraft(editInitialText);
+    clearUndo();
+    requestAnimationFrame(() => focusInputEnd());
+  }, [editInitialText, clearUndo]);
+
+  useEffect(() => {
+    if (editInitialText == null) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        handleCancelEdit();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [editInitialText, onCancelEdit]);
+
   function handleAssistTap() {
     if (!getAiAssistConsented()) {
       setConsentOpen(true);
@@ -304,11 +347,16 @@ export function ChatComposer({
         if (!text) return;
         clearUndo();
         setDraft("");
+        editSessionRef.current = null;
+        preEditDraftRef.current = "";
         onSend(text);
       }}
       className="composer-bar shrink-0 border-t border-[var(--row-separator)] bg-[var(--bg)]"
     >
       <div className="mx-auto flex w-full max-w-3xl flex-col px-[var(--sp-3)] py-[var(--sp-2)]">
+        {isEditing ? (
+          <MessageEditBanner onCancel={handleCancelEdit} />
+        ) : null}
         {inlineError ? (
           <p
             className="mb-[var(--sp-1)] text-[length:var(--text-caption)] text-[var(--destructive)]"
@@ -368,6 +416,7 @@ export function ChatComposer({
               type="file"
               accept="image/*,video/*"
               className="sr-only"
+              disabled={isEditing}
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 e.target.value = "";
@@ -378,7 +427,7 @@ export function ChatComposer({
             />
             <button
               type="button"
-              disabled={attachDisabled}
+              disabled={attachDisabled || isEditing}
               aria-label="Attach photo or video"
               onClick={() => fileInputRef.current?.click()}
               className="pressable flex h-10 w-10 shrink-0 items-center justify-center text-[var(--text-secondary)] disabled:opacity-40"
@@ -414,9 +463,11 @@ export function ChatComposer({
                 if (!text) return;
                 clearUndo();
                 setDraft("");
+                editSessionRef.current = null;
+                preEditDraftRef.current = "";
                 onSend(text);
               }}
-              placeholder="Message"
+              placeholder={isEditing ? "Edit message" : "Message"}
               autoComplete="off"
               className="max-h-[calc(16px*1.35*5)] min-h-10 flex-1 resize-none overflow-y-auto rounded-[22px] bg-[var(--surface)] px-[14px] py-[10px] text-[16px] leading-[1.35] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none"
             />
@@ -434,7 +485,7 @@ export function ChatComposer({
             ) : (
               <button
                 type="button"
-                disabled={disabled || attachDisabled || !onVoiceSend}
+                disabled={disabled || attachDisabled || !onVoiceSend || isEditing}
                 aria-label="Record voice message"
                 onClick={() => void startRecording()}
                 className="pressable flex h-10 w-10 shrink-0 items-center justify-center text-[var(--text-secondary)] disabled:opacity-40"

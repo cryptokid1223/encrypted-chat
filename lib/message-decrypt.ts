@@ -6,6 +6,7 @@ export type EncryptedMessageRow = {
   ciphertext: string;
   nonce: string;
   created_at: string;
+  edit_of?: string | null;
 };
 
 export type DecryptedMessage = {
@@ -13,6 +14,9 @@ export type DecryptedMessage = {
   senderId: string;
   body: string;
   createdAt: string;
+  editOf?: string | null;
+  edited?: boolean;
+  editAppliedAt?: string;
 };
 
 /** Decrypted plaintext cache — keyed by message id, survives re-renders. */
@@ -54,6 +58,7 @@ export async function decryptMessageRow(
       senderId: row.sender_id,
       body: cached,
       createdAt: row.created_at,
+      editOf: row.edit_of ?? null,
     };
   }
 
@@ -70,6 +75,7 @@ export async function decryptMessageRow(
       senderId: row.sender_id,
       body,
       createdAt: row.created_at,
+      editOf: row.edit_of ?? null,
     };
   } catch {
     const body = "[unable to decrypt]";
@@ -79,6 +85,7 @@ export async function decryptMessageRow(
       senderId: row.sender_id,
       body,
       createdAt: row.created_at,
+      editOf: row.edit_of ?? null,
     };
   }
 }

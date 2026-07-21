@@ -2,26 +2,42 @@ import type { AttachmentMeta } from "@/lib/fileCrypto";
 
 export type ParsedMessageBody =
   | { type: "text"; text: string }
-  | { type: "attachment"; meta: AttachmentMeta };
+  | { type: "attachment"; meta: AttachmentMeta }
+  | { type: "edit"; text: string; editOf: string };
 
-const ATTACHMENT_PREFIX = '{"_celesth"';
+const CELESTH_PREFIX = '{"_celesth"';
 
 export function buildAttachmentBody(meta: AttachmentMeta): string {
   return JSON.stringify({ _celesth: "attachment", v: 1, meta });
 }
 
 export function parseMessageBody(plaintext: string): ParsedMessageBody {
-  if (!plaintext.startsWith(ATTACHMENT_PREFIX)) {
+  if (!plaintext.startsWith(CELESTH_PREFIX)) {
     return { type: "text", text: plaintext };
   }
 
   try {
     const parsed = JSON.parse(plaintext) as {
       _celesth?: string;
+      v?: number;
       meta?: AttachmentMeta;
+      text?: string;
+      editOf?: string;
     };
     if (parsed?._celesth === "attachment" && parsed.meta?.v === 1) {
       return { type: "attachment", meta: parsed.meta };
+    }
+    if (
+      parsed?._celesth === "edit" &&
+      parsed.v === 1 &&
+      typeof parsed.text === "string" &&
+      typeof parsed.editOf === "string"
+    ) {
+      return {
+        type: "edit",
+        text: parsed.text,
+        editOf: parsed.editOf,
+      };
     }
   } catch {
     // Malformed JSON — treat as plain text.
@@ -33,6 +49,11 @@ export function parseMessageBody(plaintext: string): ParsedMessageBody {
 /** Sidebar / list preview line for a decrypted message body. */
 export function messagePreviewText(plaintext: string): string {
   const parsed = parseMessageBody(plaintext);
+  if (parsed.type === "edit") {
+    const trimmed = parsed.text.trim();
+    if (!trimmed) return "Encrypted message";
+    return trimmed.length > 80 ? `${trimmed.slice(0, 80)}…` : trimmed;
+  }
   if (parsed.type === "attachment") {
     return attachmentPreviewLabel(parsed.meta);
   }

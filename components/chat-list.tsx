@@ -46,6 +46,7 @@ type ConversationRow = {
   lastActivity: string;
   lastPreview: string;
   lastSenderId: string | null;
+  lastMessageId?: string;
   unreadCount: number;
 };
 
@@ -54,6 +55,7 @@ type GroupListRow = GroupRow & {
   lastPreview: string;
   lastSenderId: string | null;
   lastSenderUsername: string | null;
+  lastMessageId?: string;
   unreadCount: number;
   isLeft?: boolean;
 };
@@ -79,6 +81,7 @@ type MessageInsert = {
   ciphertext: string;
   nonce: string;
   created_at: string;
+  edit_of?: string | null;
 };
 
 type GroupMessageInsert = {
@@ -90,6 +93,7 @@ type GroupMessageInsert = {
   ciphertext: string;
   nonce: string;
   created_at: string;
+  edit_of?: string | null;
 };
 
 type GroupMemberInsert = {
@@ -731,6 +735,7 @@ export function ChatList({
             lastPreview: g.lastPreview,
             lastSenderId: g.lastSenderId,
             lastSenderUsername: g.lastSenderUsername,
+            lastMessageId: g.lastMessageId,
             unreadCount: g.unreadCount,
           },
         ]),
@@ -745,6 +750,7 @@ export function ChatList({
           let lastPreview = prior?.lastPreview ?? "No messages yet";
           let lastSenderId = prior?.lastSenderId ?? null;
           let lastSenderUsername = prior?.lastSenderUsername ?? null;
+          let lastMessageId = prior?.lastMessageId;
 
           if (myPrivateKey) {
             try {
@@ -760,6 +766,7 @@ export function ChatList({
               lastPreview = preview.lastPreview;
               lastSenderId = preview.lastSenderId;
               lastSenderUsername = preview.lastSenderUsername;
+              lastMessageId = preview.lastMessageId;
             } catch {
               lastPreview = "Encrypted message";
             }
@@ -775,6 +782,7 @@ export function ChatList({
             lastPreview,
             lastSenderId,
             lastSenderUsername,
+            lastMessageId,
             unreadCount: prior?.unreadCount ?? 0,
           };
           if ("isLeft" in g && g.isLeft) {
@@ -827,7 +835,7 @@ export function ChatList({
 
         nextConversations = (
           await Promise.all(
-            convRows.map(async (row) => {
+            convRows.map(async (row): Promise<ConversationRow | null> => {
             const otherId =
               row.participant_a === user.id
                 ? row.participant_b
@@ -846,6 +854,7 @@ export function ChatList({
             let lastPreview = prior?.lastPreview ?? "Encrypted message";
             let lastSenderId = prior?.lastSenderId ?? null;
             let lastActivity = createdAt;
+            let lastMessageId: string | undefined;
 
             if (myPrivateKey && otherPublicKey) {
               try {
@@ -859,6 +868,7 @@ export function ChatList({
                 lastPreview = preview.text;
                 lastSenderId = preview.senderId;
                 lastActivity = preview.lastActivity;
+                lastMessageId = preview.lastMessageId;
               } catch {
                 lastPreview = "Encrypted message";
               }
@@ -888,6 +898,7 @@ export function ChatList({
               lastPreview,
               lastSenderId,
               unreadCount: prior?.unreadCount ?? 0,
+              ...(lastMessageId ? { lastMessageId } : {}),
             };
           }),
           )
@@ -1077,6 +1088,46 @@ export function ChatList({
             }
 
             void (async () => {
+              const conv = conversationsRef.current.find(
+                (c) => c.id === row.conversation_id,
+              );
+
+              if (row.edit_of) {
+                if (conv?.lastMessageId !== row.edit_of) return;
+
+                const myPrivateKey = myPrivateKeyRef.current;
+                const otherPublicKey = otherPublicKeyByConvRef.current.get(
+                  row.conversation_id,
+                );
+                let lastPreview: string | undefined;
+                if (myPrivateKey && otherPublicKey) {
+                  try {
+                    lastPreview = await previewFromMessageRow(
+                      row as EncryptedMessageRow,
+                      otherPublicKey,
+                      myPrivateKey,
+                    );
+                  } catch {
+                    // Keep existing preview on decrypt failure.
+                  }
+                }
+
+                if (lastPreview !== undefined && conv) {
+                  pendingUpdateRef.current.set(row.conversation_id, {
+                    lastActivity: conv.lastActivity,
+                    lastPreview,
+                    lastSenderId: conv.lastSenderId,
+                  });
+                  if (!flushTimerRef.current) {
+                    flushTimerRef.current = setTimeout(() => {
+                      flushTimerRef.current = null;
+                      flushPendingUpdates();
+                    }, 120);
+                  }
+                }
+                return;
+              }
+
               const myPrivateKey = myPrivateKeyRef.current;
               const otherPublicKey = otherPublicKeyByConvRef.current.get(
                 row.conversation_id,
@@ -1116,7 +1167,19 @@ export function ChatList({
                 setConversations((prev) =>
                   prev.map((c) =>
                     c.id === row.conversation_id
-                      ? { ...c, unreadCount: c.unreadCount + 1 }
+                      ? {
+                          ...c,
+                          unreadCount: c.unreadCount + 1,
+                          lastMessageId: row.id,
+                        }
+                      : c,
+                  ),
+                );
+              } else if (row.sender_id === user.id) {
+                setConversations((prev) =>
+                  prev.map((c) =>
+                    c.id === row.conversation_id
+                      ? { ...c, lastMessageId: row.id }
                       : c,
                   ),
                 );
@@ -1151,6 +1214,49 @@ export function ChatList({
             }
 
             void (async () => {
+              const grp = groupsRef.current.find((g) => g.id === row.group_id);
+
+              if (row.edit_of) {
+                if (grp?.lastMessageId !== row.edit_of) return;
+
+                const myPrivateKey = myPrivateKeyRef.current;
+                let lastPreview: string | undefined;
+                if (myPrivateKey) {
+                  try {
+                    const client = createClient();
+                    const { data: senderProfile } = await client
+                      .from("profiles")
+                      .select("public_key")
+                      .eq("id", row.sender_id)
+                      .maybeSingle();
+
+                    lastPreview = await previewFromGroupMessageRow(
+                      row as GroupMessageRow,
+                      (senderProfile?.public_key as string | null) ?? null,
+                      myPrivateKey,
+                    );
+                  } catch {
+                    // Keep existing preview on decrypt failure.
+                  }
+                }
+
+                if (lastPreview !== undefined && grp) {
+                  pendingUpdateRef.current.set(row.group_id, {
+                    lastActivity: grp.lastActivity,
+                    lastPreview,
+                    lastSenderId: grp.lastSenderId,
+                    lastSenderUsername: grp.lastSenderUsername,
+                  });
+                  if (!flushTimerRef.current) {
+                    flushTimerRef.current = setTimeout(() => {
+                      flushTimerRef.current = null;
+                      flushPendingUpdates();
+                    }, 120);
+                  }
+                }
+                return;
+              }
+
               const myPrivateKey = myPrivateKeyRef.current;
               let lastPreview: string | undefined;
               let lastSenderUsername: string | null | undefined;
@@ -1199,7 +1305,19 @@ export function ChatList({
                 setGroups((prev) =>
                   prev.map((g) =>
                     g.id === row.group_id
-                      ? { ...g, unreadCount: g.unreadCount + 1 }
+                      ? {
+                          ...g,
+                          unreadCount: g.unreadCount + 1,
+                          lastMessageId: row.message_uuid,
+                        }
+                      : g,
+                  ),
+                );
+              } else if (row.sender_id === user.id) {
+                setGroups((prev) =>
+                  prev.map((g) =>
+                    g.id === row.group_id
+                      ? { ...g, lastMessageId: row.message_uuid }
                       : g,
                   ),
                 );

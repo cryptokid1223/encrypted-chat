@@ -54,7 +54,15 @@ import {
 } from "@/lib/imageProcessing";
 import { hasPrivateKey, loadPrivateKey } from "@/lib/keystore";
 import { applyAfterClear, attachmentCacheScope, fetchClearedAt } from "@/lib/conversationClear";
-import { buildAttachmentBody } from "@/lib/messageContent";
+import { buildAttachmentBody, parseMessageBody } from "@/lib/messageContent";
+import {
+  applyIncomingEdit,
+  buildEditBody,
+  canEditMessage,
+  editMetaFromMessage,
+  integrateMessageBatch,
+  mergeMessagesWithEdits,
+} from "@/lib/messageEdits";
 import { createClient } from "@/lib/supabase/client";
 import { stopVoicePlayback } from "@/lib/voicePlayer";
 import { InlineSpinner } from "@/components/inline-spinner";
@@ -64,6 +72,9 @@ type DisplayMessage = {
   senderId: string;
   body: string;
   createdAt: string;
+  editOf?: string | null;
+  edited?: boolean;
+  editAppliedAt?: string;
   failed?: boolean;
   decryptFailed?: boolean;
   localPreviewUrl?: string;
@@ -72,6 +83,27 @@ type DisplayMessage = {
     "kind" | "w" | "h" | "durationMs"
   >;
 };
+
+const GROUP_MESSAGE_SELECT =
+  "id, group_id, message_uuid, sender_id, recipient_id, ciphertext, nonce, created_at, edit_of";
+
+function toDisplayMessage(m: {
+  id: string;
+  senderId: string;
+  body: string;
+  createdAt: string;
+  editOf?: string | null;
+  decryptFailed?: boolean;
+}): DisplayMessage {
+  return {
+    id: m.id,
+    senderId: m.senderId,
+    body: m.body,
+    createdAt: m.createdAt,
+    editOf: m.editOf,
+    decryptFailed: m.decryptFailed,
+  };
+}
 
 function isSameRenderGroup(
   aSender: string,
@@ -145,9 +177,9 @@ export function GroupRoom() {
   const myPrivateKeyRef = useRef<string | null>(null);
   const membersRef = useRef<GroupMemberWithKey[]>([]);
   const senderPublicKeyByUserIdRef = useRef(new Map<string, string>());
-  const pendingByUuidRef = useRef<Map<string, { tempId: string; body: string }>>(
-    new Map(),
-  );
+  const pendingByUuidRef = useRef<
+    Map<string, { tempId: string; body: string; isEdit?: boolean; targetId?: string }>
+  >(new Map());
   const initialMessageIdsRef = useRef<Set<string> | null>(null);
   const [loadedGroupId, setLoadedGroupId] = useState<string | null>(null);
   const [hasMoreHistory, setHasMoreHistory] = useState(true);
@@ -156,6 +188,9 @@ export function GroupRoom() {
   const loadingOlderRef = useRef(false);
   const historyCursorRef = useRef<HistoryCursor | null>(null);
   const clearedAtRef = useRef<string | null>(null);
+  const pendingEditsRef = useRef<Map<string, DisplayMessage>>(new Map());
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editInitialText, setEditInitialText] = useState<string | null>(null);
   const pendingScrollAnchorRef = useRef<ScrollAnchor | null>(null);
   const groupIdRef = useRef(groupId);
   const pendingFileRef = useRef<Map<string, File>>(new Map());
@@ -196,6 +231,9 @@ export function GroupRoom() {
     pendingScrollAnchorRef.current = null;
     pendingFileRef.current.clear();
     pendingAudioRef.current.clear();
+    pendingEditsRef.current.clear();
+    setEditingMessageId(null);
+    setEditInitialText(null);
   }, [groupId]);
 
   const {
@@ -329,9 +367,7 @@ export function GroupRoom() {
       const startedFor = groupIdRef.current;
       let query = supabase
         .from("group_messages")
-        .select(
-          "id, group_id, message_uuid, sender_id, recipient_id, ciphertext, nonce, created_at",
-        )
+        .select(GROUP_MESSAGE_SELECT)
         .eq("group_id", startedFor)
         .eq("recipient_id", userId)
         .or(olderThanOrFilter(cursor));
@@ -369,13 +405,7 @@ export function GroupRoom() {
 
       const fresh = decrypted
         .filter((m) => !seenMessageUuidsRef.current.has(m.id))
-        .map((m) => ({
-          id: m.id,
-          senderId: m.senderId,
-          body: m.body,
-          createdAt: m.createdAt,
-          decryptFailed: m.decryptFailed,
-        }));
+        .map((m) => toDisplayMessage(m));
 
       for (const m of fresh) {
         seenMessageUuidsRef.current.add(m.id);
@@ -387,7 +417,15 @@ export function GroupRoom() {
       if (fresh.length === 0) return;
 
       pendingScrollAnchorRef.current = captureScrollAnchor(scrollerRef.current);
-      setMessages((prev) => [...fresh, ...prev]);
+      const integrated = integrateMessageBatch(
+        messagesRef.current,
+        fresh,
+        pendingEditsRef.current,
+        clearedAtRef.current,
+        true,
+      );
+      pendingEditsRef.current = integrated.pendingEdits;
+      setMessages(integrated.messages);
     } finally {
       loadingOlderRef.current = false;
       setLoadingOlder(false);
@@ -502,9 +540,7 @@ export function GroupRoom() {
 
         let messagesQuery = supabase
           .from("group_messages")
-          .select(
-            "id, group_id, message_uuid, sender_id, recipient_id, ciphertext, nonce, created_at",
-          )
+          .select(GROUP_MESSAGE_SELECT)
           .eq("group_id", groupId)
           .eq("recipient_id", user.id);
         messagesQuery = applyAfterClear(messagesQuery, clearedAt);
@@ -533,6 +569,12 @@ export function GroupRoom() {
           privateKey,
         );
 
+        const merged = mergeMessagesWithEdits(
+          decrypted.map((m) => toDisplayMessage(m)),
+          clearedAt,
+        );
+        pendingEditsRef.current = merged.pendingEdits;
+
         if (cancelled) return;
 
         for (const row of newestFirst) {
@@ -558,15 +600,7 @@ export function GroupRoom() {
         setMemberCount(shell.memberCount);
         setMyJoinedAt((myMembership?.joined_at as string | undefined) ?? null);
         setGroupCreatedAt((groupRow?.created_at as string | undefined) ?? null);
-        setMessages(
-          decrypted.map((m) => ({
-            id: m.id,
-            senderId: m.senderId,
-            body: m.body,
-            createdAt: m.createdAt,
-            decryptFailed: m.decryptFailed,
-          })),
-        );
+        setMessages(merged.messages);
         setLoadedGroupId(groupId);
         setStatus("ready");
 
@@ -594,6 +628,9 @@ export function GroupRoom() {
                     pendingByUuidRef.current.delete(row.message_uuid);
                     seenMessageUuidsRef.current.add(row.message_uuid);
                     if (cancelled) return;
+                    if (pending.isEdit && pending.targetId) {
+                      return;
+                    }
                     setMessages((prev) =>
                       prev.map((m) =>
                         m.id === pending.tempId
@@ -617,13 +654,21 @@ export function GroupRoom() {
                 );
 
                 if (cancelled) return;
-                appendDecryptedMessage({
-                  id: display.id,
-                  senderId: display.senderId,
-                  body: display.body,
-                  createdAt: display.createdAt,
-                  decryptFailed: display.decryptFailed,
-                });
+
+                if (row.edit_of || editMetaFromMessage(display.body, row.edit_of)) {
+                  setMessages((prev) => {
+                    const applied = applyIncomingEdit(
+                      prev,
+                      toDisplayMessage(display),
+                      clearedAtRef.current,
+                    );
+                    return applied ?? prev;
+                  });
+                  seenMessageUuidsRef.current.add(display.id);
+                  return;
+                }
+
+                appendDecryptedMessage(toDisplayMessage(display));
                 markReadIfVisible("group", groupId);
               })();
             },
@@ -735,9 +780,10 @@ export function GroupRoom() {
     (
       text: string,
       existingMessageUuid?: string,
-      options?: { manageSendingState?: boolean },
+      options?: { manageSendingState?: boolean; editOf?: string },
     ) => {
       const manageSendingState = options?.manageSendingState !== false;
+      const editOf = options?.editOf;
       const myId = myUserIdRef.current;
       const myKey = myPrivateKeyRef.current;
       const members = membersRef.current;
@@ -746,37 +792,60 @@ export function GroupRoom() {
       const messageUuid = existingMessageUuid ?? crypto.randomUUID();
       const tempId = optimisticId(messageUuid);
       const optimisticCreatedAt = new Date().toISOString();
+      const plaintext = editOf ? buildEditBody(text, editOf) : text;
 
-      setMessages((prev) => {
-        const existing = prev.find(
-          (m) => m.id === tempId || messageUuidFromId(m.id) === messageUuid,
-        );
-        if (existing) {
-          return prev.map((m) =>
-            m.id === existing.id
+      if (editOf) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === editOf
               ? {
                   ...m,
                   body: text,
-                  createdAt: optimisticCreatedAt,
+                  edited: true,
+                  editAppliedAt: optimisticCreatedAt,
                   failed: false,
                   decryptFailed: false,
                 }
               : m,
+          ),
+        );
+      } else {
+        setMessages((prev) => {
+          const existing = prev.find(
+            (m) => m.id === tempId || messageUuidFromId(m.id) === messageUuid,
           );
-        }
-        if (prev.some((m) => m.id === tempId)) return prev;
-        return [
-          ...prev,
-          {
-            id: tempId,
-            senderId: myId,
-            body: text,
-            createdAt: optimisticCreatedAt,
-          },
-        ];
-      });
+          if (existing) {
+            return prev.map((m) =>
+              m.id === existing.id
+                ? {
+                    ...m,
+                    body: text,
+                    createdAt: optimisticCreatedAt,
+                    failed: false,
+                    decryptFailed: false,
+                  }
+                : m,
+            );
+          }
+          if (prev.some((m) => m.id === tempId)) return prev;
+          return [
+            ...prev,
+            {
+              id: tempId,
+              senderId: myId,
+              body: text,
+              createdAt: optimisticCreatedAt,
+            },
+          ];
+        });
+      }
 
-      pendingByUuidRef.current.set(messageUuid, { tempId, body: text });
+      pendingByUuidRef.current.set(messageUuid, {
+        tempId: editOf ? optimisticId(messageUuid) : tempId,
+        body: text,
+        isEdit: Boolean(editOf),
+        targetId: editOf,
+      });
 
       void (async () => {
         if (manageSendingState) {
@@ -797,7 +866,7 @@ export function GroupRoom() {
           const encryptedRows = await Promise.all(
             members.map(async (member) => {
               const { ciphertext, nonce } = await encryptMessage(
-                text,
+                plaintext,
                 member.publicKey,
                 myKey,
               );
@@ -808,6 +877,7 @@ export function GroupRoom() {
                 recipient_id: member.userId,
                 ciphertext,
                 nonce,
+                edit_of: editOf ?? null,
               };
             }),
           );
@@ -816,9 +886,7 @@ export function GroupRoom() {
           const { data: inserted, error: insertError } = await supabase
             .from("group_messages")
             .insert(encryptedRows)
-            .select(
-              "id, group_id, message_uuid, sender_id, recipient_id, ciphertext, nonce, created_at",
-            );
+            .select(GROUP_MESSAGE_SELECT);
 
           if (insertError || !inserted?.length) {
             throw new Error("Could not send message");
@@ -831,22 +899,24 @@ export function GroupRoom() {
           pendingByUuidRef.current.delete(messageUuid);
           seenMessageUuidsRef.current.add(messageUuid);
 
-          const selfRow = (inserted as GroupMessageRow[]).find(
-            (row) => row.recipient_id === myId,
-          );
+          if (!editOf) {
+            const selfRow = (inserted as GroupMessageRow[]).find(
+              (row) => row.recipient_id === myId,
+            );
 
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === tempId || messageUuidFromId(m.id) === messageUuid
-                ? {
-                    ...m,
-                    id: messageUuid,
-                    createdAt: selfRow?.created_at ?? optimisticCreatedAt,
-                    failed: false,
-                  }
-                : m,
-            ),
-          );
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === tempId || messageUuidFromId(m.id) === messageUuid
+                  ? {
+                      ...m,
+                      id: messageUuid,
+                      createdAt: selfRow?.created_at ?? optimisticCreatedAt,
+                      failed: false,
+                    }
+                  : m,
+              ),
+            );
+          }
           pendingFileRef.current.delete(tempId);
           pendingFileRef.current.delete(messageUuid);
           pendingAudioRef.current.delete(tempId);
@@ -857,13 +927,19 @@ export function GroupRoom() {
             return;
           }
 
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === tempId || messageUuidFromId(m.id) === messageUuid
-                ? { ...m, failed: true }
-                : m,
-            ),
-          );
+          if (editOf) {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === editOf ? { ...m, failed: true } : m)),
+            );
+          } else {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === tempId || messageUuidFromId(m.id) === messageUuid
+                  ? { ...m, failed: true }
+                  : m,
+              ),
+            );
+          }
         } finally {
           if (manageSendingState) {
             setSending(false);
@@ -1200,10 +1276,28 @@ export function GroupRoom() {
 
   const handleSend = useCallback(
     (text: string) => {
+      if (editingMessageId) {
+        sendGroupMessage(text, crypto.randomUUID(), { editOf: editingMessageId });
+        setEditingMessageId(null);
+        setEditInitialText(null);
+        return;
+      }
       sendGroupMessage(text);
     },
-    [sendGroupMessage],
+    [sendGroupMessage, editingMessageId],
   );
+
+  const startEditMessage = useCallback((message: DisplayMessage) => {
+    const parsed = parseMessageBody(message.body);
+    if (parsed.type !== "text") return;
+    setEditingMessageId(message.id);
+    setEditInitialText(parsed.text);
+  }, []);
+
+  const cancelEditMessage = useCallback(() => {
+    setEditingMessageId(null);
+    setEditInitialText(null);
+  }, []);
 
   const handleRetry = useCallback(
     (id: string) => {
@@ -1403,9 +1497,11 @@ export function GroupRoom() {
                         isPending={isOptimisticPending(m.id)}
                         animateIn={
                           initialMessageIdsRef.current !== null &&
-                          !initialMessageIdsRef.current.has(m.id)
+                          !initialMessageIdsRef.current.has(m.id) &&
+                          !m.edited
                         }
                         failed={m.failed}
+                        edited={m.edited}
                         decryptFailed={m.decryptFailed}
                         localPreviewUrl={m.localPreviewUrl}
                         pendingAttachment={m.pendingAttachment}
@@ -1413,6 +1509,13 @@ export function GroupRoom() {
                         senderId={m.senderId}
                         onRetry={handleRetry}
                         attachmentCacheScope={attachmentCacheScope("group", groupId)}
+                        onEditRequest={
+                          mine &&
+                          canEditMessage(mine, m.body, m.createdAt) &&
+                          !editingMessageId
+                            ? () => startEditMessage(m)
+                            : undefined
+                        }
                       />
                     </li>
                   );
@@ -1429,8 +1532,10 @@ export function GroupRoom() {
           onVoiceSend={handleVoiceSend}
           disabled={sending}
           attachDisabled={attachUploading}
-        attachError={attachError}
-      />
+          attachError={attachError}
+          editInitialText={editInitialText}
+          onCancelEdit={cancelEditMessage}
+        />
 
       {groupInfoOpen && myUserId ? (
         <GroupInfo

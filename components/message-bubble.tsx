@@ -1,7 +1,11 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useState } from "react";
 import { AttachmentBubble } from "@/components/attachment-bubble";
+import {
+  MessageActionSheet,
+  useMessageLongPress,
+} from "@/components/message-actions";
 import { formatDayDivider, formatMessageTime } from "@/lib/chat";
 import type { AttachmentMeta } from "@/lib/fileCrypto";
 import { parseMessageBody } from "@/lib/messageContent";
@@ -26,6 +30,8 @@ export type MessageBubbleProps = {
   senderId?: string;
   decryptFailed?: boolean;
   attachmentCacheScope?: string;
+  edited?: boolean;
+  onEditRequest?: () => void;
   onRetry?: (id: string) => void;
 };
 
@@ -68,18 +74,24 @@ function BubbleTimestamp({
   timestamp,
   isMine,
   overlay,
+  edited,
 }: {
   timestamp: string;
   isMine: boolean;
   overlay?: boolean;
+  edited?: boolean;
 }) {
   const time = formatMessageTime(timestamp);
+  const editedLabel = edited ? (
+    <span className="opacity-[0.65]">Edited · </span>
+  ) : null;
   if (overlay) {
     return (
       <span
         className="pointer-events-none absolute bottom-[6px] right-[8px] rounded-[6px] bg-black/45 px-[5px] py-[2px] text-[11px] leading-none text-white/90"
         aria-hidden
       >
+        {edited ? "Edited · " : null}
         {time}
       </span>
     );
@@ -90,6 +102,7 @@ function BubbleTimestamp({
         isMine ? "text-white" : "text-[var(--text-primary)]"
       }`}
     >
+      {editedLabel}
       {time}
     </span>
   );
@@ -112,8 +125,14 @@ export const MessageBubble = memo(function MessageBubble({
   senderId,
   decryptFailed,
   attachmentCacheScope,
+  edited,
+  onEditRequest,
   onRetry,
 }: MessageBubbleProps) {
+  const [actionOpen, setActionOpen] = useState(false);
+  const longPress = useMessageLongPress(() => {
+    if (onEditRequest) setActionOpen(true);
+  });
   const radiusClass = bubbleRadiusClass(isMine, isLastInGroup);
   const groupGap = isFirstInGroup ? "10px" : "2px";
   const parsed = parseMessageBody(body);
@@ -235,10 +254,15 @@ export const MessageBubble = memo(function MessageBubble({
               className={`px-[14px] py-[10px] text-[15px] leading-[1.35] break-words whitespace-pre-wrap ${radiusClass} ${bubbleClass} ${
                 isPending ? "opacity-70" : ""
               }`}
+              {...(onEditRequest ? longPress : {})}
             >
               {parsed.type === "text" ? parsed.text : body}
               {showTime ? (
-                <BubbleTimestamp timestamp={timestamp} isMine={isMine} />
+                <BubbleTimestamp
+                  timestamp={timestamp}
+                  isMine={isMine}
+                  edited={edited}
+                />
               ) : null}
             </div>
           )}
@@ -253,6 +277,12 @@ export const MessageBubble = memo(function MessageBubble({
           ) : null}
         </div>
       </div>
+      {actionOpen && onEditRequest ? (
+        <MessageActionSheet
+          actions={[{ label: "Edit", onSelect: onEditRequest }]}
+          onClose={() => setActionOpen(false)}
+        />
+      ) : null}
     </>
   );
 });
