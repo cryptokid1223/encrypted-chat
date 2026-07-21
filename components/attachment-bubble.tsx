@@ -88,12 +88,14 @@ const ImageAttachmentContent = memo(function ImageAttachmentContent({
   localPreviewUrl,
   isPending,
   failed,
+  cacheScope,
 }: {
   meta: AttachmentMeta;
   isMine: boolean;
   localPreviewUrl?: string;
   isPending?: boolean;
   failed?: boolean;
+  cacheScope?: string;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [nearViewport, setNearViewport] = useState(false);
@@ -132,8 +134,8 @@ const ImageAttachmentContent = memo(function ImageAttachmentContent({
       setLoadState({ kind: "loading" });
       setImageVisible(false);
       const request = retry
-        ? retryDecryptedImageUrl(meta)
-        : getDecryptedImageUrl(meta);
+        ? retryDecryptedImageUrl(meta, cacheScope)
+        : getDecryptedImageUrl(meta, cacheScope);
       void request
         .then((url) => setLoadState({ kind: "loaded", url }))
         .catch((err) => {
@@ -145,7 +147,7 @@ const ImageAttachmentContent = memo(function ImageAttachmentContent({
           });
         });
     },
-    [localPreviewUrl, meta, metaPath],
+    [localPreviewUrl, meta, metaPath, cacheScope],
   );
 
   useEffect(() => {
@@ -264,12 +266,14 @@ const VideoAttachmentContent = memo(function VideoAttachmentContent({
   localPreviewUrl,
   isPending,
   failed,
+  cacheScope,
 }: {
   meta: AttachmentMeta;
   isMine: boolean;
   localPreviewUrl?: string;
   isPending?: boolean;
   failed?: boolean;
+  cacheScope?: string;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [nearViewport, setNearViewport] = useState(false);
@@ -314,11 +318,11 @@ const VideoAttachmentContent = memo(function VideoAttachmentContent({
       setThumbState({ kind: "loading" });
       setThumbVisible(false);
       const request = retry
-        ? getDecryptedThumbUrl(meta).then((url) => {
+        ? getDecryptedThumbUrl(meta, cacheScope).then((url) => {
             if (!url) throw new Error("No thumbnail");
             return url;
           })
-        : getDecryptedThumbUrl(meta).then((url) => {
+        : getDecryptedThumbUrl(meta, cacheScope).then((url) => {
             if (!url) throw new Error("No thumbnail");
             return url;
           });
@@ -326,7 +330,7 @@ const VideoAttachmentContent = memo(function VideoAttachmentContent({
         .then((url) => setThumbState({ kind: "loaded", url }))
         .catch(() => setThumbState({ kind: "download-failed" }));
     },
-    [localPreviewUrl, meta],
+    [localPreviewUrl, meta, cacheScope],
   );
 
   useEffect(() => {
@@ -345,7 +349,7 @@ const VideoAttachmentContent = memo(function VideoAttachmentContent({
     if (isPending || failed || videoState === "loading") return;
 
     setVideoState("loading");
-    void getDecryptedVideoUrl(meta)
+    void getDecryptedVideoUrl(meta, cacheScope)
       .then((url) => {
         setVideoUrl(url);
         setViewerOpen(true);
@@ -362,7 +366,7 @@ const VideoAttachmentContent = memo(function VideoAttachmentContent({
 
   const handleRetryVideo = useCallback(() => {
     setVideoState("loading");
-    void retryDecryptedVideoUrl(meta)
+    void retryDecryptedVideoUrl(meta, cacheScope)
       .then((url) => {
         setVideoUrl(url);
         setViewerOpen(true);
@@ -498,12 +502,14 @@ export const AttachmentBubble = memo(function AttachmentBubble({
   localPreviewUrl,
   isPending,
   failed,
+  cacheScope,
 }: {
   meta: AttachmentMeta;
   isMine: boolean;
   localPreviewUrl?: string;
   isPending?: boolean;
   failed?: boolean;
+  cacheScope?: string;
 }) {
   if (meta.kind === "audio") {
     return (
@@ -519,6 +525,7 @@ export const AttachmentBubble = memo(function AttachmentBubble({
         localPreviewUrl={localPreviewUrl}
         isPending={isPending}
         failed={failed}
+        cacheScope={cacheScope}
       />
     );
   }
@@ -530,6 +537,7 @@ export const AttachmentBubble = memo(function AttachmentBubble({
       localPreviewUrl={localPreviewUrl}
       isPending={isPending}
       failed={failed}
+      cacheScope={cacheScope}
     />
   );
 });

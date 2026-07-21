@@ -37,6 +37,29 @@ const imageCache = new Map<string, CacheEntry>();
 const imageLru: string[] = [];
 const videoCache = new Map<string, CacheEntry>();
 const videoLru: string[] = [];
+const pathsByConversationScope = new Map<string, Set<string>>();
+
+function trackConversationPath(scope: string | undefined, path: string): void {
+  if (!scope || !path) return;
+  let set = pathsByConversationScope.get(scope);
+  if (!set) {
+    set = new Set();
+    pathsByConversationScope.set(scope, set);
+  }
+  set.add(path);
+}
+
+function revokePathFromCaches(path: string): void {
+  for (const kind of ["image", "video"] as const) {
+    const { cache, lru } = cacheFor(kind);
+    const entry = cache.get(path);
+    if (entry?.status === "resolved") {
+      URL.revokeObjectURL(entry.url);
+    }
+    cache.delete(path);
+    removeFromLru(kind, path);
+  }
+}
 
 function cacheFor(kind: CacheKind): {
   cache: Map<string, CacheEntry>;
@@ -107,9 +130,11 @@ async function fetchAndDecrypt(ref: AttachmentBlobRef): Promise<string> {
 function beginFetch(
   ref: AttachmentBlobRef,
   kind: CacheKind,
+  cacheScope?: string,
 ): Promise<string> {
   const { cache } = cacheFor(kind);
   const path = ref.path;
+  trackConversationPath(cacheScope, path);
   const promise = fetchAndDecrypt(ref).then(
     (url) => {
       cache.set(path, { status: "resolved", url });
@@ -138,11 +163,14 @@ function peekUrl(kind: CacheKind, path: string): string | undefined {
 function getDecryptedBlobUrl(
   ref: AttachmentBlobRef,
   kind: CacheKind,
+  cacheScope?: string,
 ): Promise<string> {
   const path = ref.path;
   if (!path) {
     throw new AttachmentDownloadError("Missing attachment path");
   }
+
+  trackConversationPath(cacheScope, path);
 
   const { cache } = cacheFor(kind);
   const existing = cache.get(path);
@@ -160,12 +188,13 @@ function getDecryptedBlobUrl(
     return Promise.reject(new AttachmentDownloadError());
   }
 
-  return beginFetch(ref, kind);
+  return beginFetch(ref, kind, cacheScope);
 }
 
 function retryDecryptedBlobUrl(
   ref: AttachmentBlobRef,
   kind: CacheKind,
+  cacheScope?: string,
 ): Promise<string> {
   const path = ref.path;
   const existing = cacheFor(kind).cache.get(path);
@@ -174,7 +203,7 @@ function retryDecryptedBlobUrl(
   }
   cacheFor(kind).cache.delete(path);
   removeFromLru(kind, path);
-  return getDecryptedBlobUrl(ref, kind);
+  return getDecryptedBlobUrl(ref, kind, cacheScope);
 }
 
 function metaToRef(meta: AttachmentMeta): AttachmentBlobRef {
@@ -202,22 +231,25 @@ export function peekDecryptedVideoUrl(path: string): string | undefined {
  */
 export async function getDecryptedImageUrl(
   meta: AttachmentMeta,
+  cacheScope?: string,
 ): Promise<string> {
-  return getDecryptedBlobUrl(metaToRef(meta), "image");
+  return getDecryptedBlobUrl(metaToRef(meta), "image", cacheScope);
 }
 
 /** Returns a blob object URL for a decrypted video attachment. */
 export async function getDecryptedVideoUrl(
   meta: AttachmentMeta,
+  cacheScope?: string,
 ): Promise<string> {
-  return getDecryptedBlobUrl(metaToRef(meta), "video");
+  return getDecryptedBlobUrl(metaToRef(meta), "video", cacheScope);
 }
 
 /** Returns a blob object URL for a decrypted audio attachment (image LRU cache). */
 export async function getDecryptedAudioUrl(
   meta: AttachmentMeta,
+  cacheScope?: string,
 ): Promise<string> {
-  return getDecryptedBlobUrl(metaToRef(meta), "image");
+  return getDecryptedBlobUrl(metaToRef(meta), "image", cacheScope);
 }
 
 /** Returns a cached audio blob URL synchronously, if available. */
@@ -228,6 +260,7 @@ export function peekDecryptedAudioUrl(path: string): string | undefined {
 /** Returns a blob object URL for an encrypted video thumbnail, if present. */
 export async function getDecryptedThumbUrl(
   meta: AttachmentMeta,
+  cacheScope?: string,
 ): Promise<string | null> {
   if (!meta.thumb) return null;
   return getDecryptedBlobUrl(
@@ -238,28 +271,42 @@ export async function getDecryptedThumbUrl(
       mime: "image/jpeg",
     },
     "image",
+    cacheScope,
   );
 }
 
 /** Clears a failed image/thumbnail entry and retries fetch + decrypt. */
 export function retryDecryptedImageUrl(
   meta: AttachmentMeta,
+  cacheScope?: string,
 ): Promise<string> {
-  return retryDecryptedBlobUrl(metaToRef(meta), "image");
+  return retryDecryptedBlobUrl(metaToRef(meta), "image", cacheScope);
 }
 
 /** Clears a failed video entry and retries fetch + decrypt. */
 export function retryDecryptedVideoUrl(
   meta: AttachmentMeta,
+  cacheScope?: string,
 ): Promise<string> {
-  return retryDecryptedBlobUrl(metaToRef(meta), "video");
+  return retryDecryptedBlobUrl(metaToRef(meta), "video", cacheScope);
 }
 
 /** Clears a failed audio entry and retries fetch + decrypt. */
 export function retryDecryptedAudioUrl(
   meta: AttachmentMeta,
+  cacheScope?: string,
 ): Promise<string> {
-  return retryDecryptedBlobUrl(metaToRef(meta), "image");
+  return retryDecryptedBlobUrl(metaToRef(meta), "image", cacheScope);
+}
+
+/** Revoke cached blob URLs for one conversation scope. */
+export function purgeConversationAttachmentCache(scope: string): void {
+  const paths = pathsByConversationScope.get(scope);
+  if (!paths) return;
+  for (const path of paths) {
+    revokePathFromCaches(path);
+  }
+  pathsByConversationScope.delete(scope);
 }
 
 /** Revoke all cached blob URLs — call on logout. */
@@ -279,4 +326,5 @@ export function revokeAllAttachmentUrls(): void {
   videoCache.clear();
   imageLru.length = 0;
   videoLru.length = 0;
+  pathsByConversationScope.clear();
 }

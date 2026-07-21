@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronLeftIcon } from "@/components/icons";
 import { ContactDetail } from "@/components/contact-detail";
+import { DeleteConversationDialog } from "@/components/delete-conversation-dialog";
 import { useKeyGate } from "@/components/key-gate";
 import { useNicknames } from "@/components/nicknames-context";
 import { isSameCalendarDay } from "@/lib/chat";
@@ -21,6 +22,13 @@ import {
   hasNickname,
 } from "@/lib/display-name";
 import { hasPrivateKey, loadPrivateKey } from "@/lib/keystore";
+import {
+  applyAfterClear,
+  attachmentCacheScope,
+  fetchClearedAt,
+  markConversationCleared,
+} from "@/lib/conversationClear";
+import { purgeConversationAttachmentCache } from "@/lib/attachmentCache";
 import { createClient } from "@/lib/supabase/client";
 import { MessageBubble } from "@/components/message-bubble";
 import { ChatComposer, type VoiceRecordingPayload } from "@/components/chat-composer";
@@ -101,6 +109,7 @@ function ChatHistorySkeleton() {
 export function ChatRoom() {
   const params = useParams<{ conversationId: string }>();
   const conversationId = params.conversationId;
+  const router = useRouter();
   const { requireKeyImport } = useKeyGate();
 
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -109,6 +118,8 @@ export function ChatRoom() {
   const [otherUserId, setOtherUserId] = useState<string | null>(null);
   const [otherAvatarId, setOtherAvatarId] = useState<string | null>(null);
   const [contactDetailOpen, setContactDetailOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const { getNickname } = useNicknames();
   const [myUserId, setMyUserId] = useState<string | null>(null);
   const [theirPublicKey, setTheirPublicKey] = useState<string | null>(null);
@@ -148,6 +159,7 @@ export function ChatRoom() {
   const hasMoreHistoryRef = useRef(true);
   const loadingOlderRef = useRef(false);
   const historyCursorRef = useRef<HistoryCursor | null>(null);
+  const clearedAtRef = useRef<string | null>(null);
   const pendingScrollAnchorRef = useRef<ScrollAnchor | null>(null);
   const conversationIdRef = useRef(conversationId);
 
@@ -255,11 +267,13 @@ export function ChatRoom() {
 
     try {
       const supabase = createClient();
-      const { data: rows, error: messagesError } = await supabase
+      let query = supabase
         .from("messages")
         .select("id, sender_id, ciphertext, nonce, created_at")
         .eq("conversation_id", conversationIdRef.current)
-        .or(olderThanOrFilter(cursor))
+        .or(olderThanOrFilter(cursor));
+      query = applyAfterClear(query, clearedAtRef.current);
+      const { data: rows, error: messagesError } = await query
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
         .limit(PAGE_SIZE);
@@ -412,10 +426,15 @@ export function ChatRoom() {
           return;
         }
 
-        const { data: rows, error: messagesError } = await supabase
+        const clearedAt = await fetchClearedAt("dm", conversationId);
+        clearedAtRef.current = clearedAt;
+
+        let messagesQuery = supabase
           .from("messages")
           .select("id, sender_id, ciphertext, nonce, created_at")
-          .eq("conversation_id", conversationId)
+          .eq("conversation_id", conversationId);
+        messagesQuery = applyAfterClear(messagesQuery, clearedAt);
+        const { data: rows, error: messagesError } = await messagesQuery
           .order("created_at", { ascending: false })
           .order("id", { ascending: false })
           .limit(PAGE_SIZE);
@@ -1049,6 +1068,24 @@ export function ChatRoom() {
   };
   const otherDisplayName = displayName(otherIdentity);
   const otherHasNickname = hasNickname(otherIdentity);
+  const attachmentScope = attachmentCacheScope("dm", conversationId);
+
+  async function confirmDeleteConversation() {
+    setDeleting(true);
+    try {
+      const result = await markConversationCleared("dm", conversationId);
+      if (!result.ok) {
+        setError(result.error);
+        setDeleteOpen(false);
+        return;
+      }
+      purgeConversationAttachmentCache(attachmentScope);
+      router.replace("/chats");
+      router.refresh();
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <PhotoViewerHostProvider hostRef={photoViewerHostRef}>
@@ -1074,6 +1111,16 @@ export function ChatRoom() {
                 {otherDisplayName}
               </p>
             </div>
+          </button>
+          <button
+            type="button"
+            aria-label="Delete conversation"
+            onClick={() => setDeleteOpen(true)}
+            className="pressable flex h-11 w-11 shrink-0 items-center justify-center text-[var(--text-secondary)]"
+          >
+            <span className="text-[20px] leading-none" aria-hidden>
+              ···
+            </span>
           </button>
         </div>
       </header>
@@ -1161,6 +1208,7 @@ export function ChatRoom() {
                       failed={m.failed}
                       localPreviewUrl={m.localPreviewUrl}
                       pendingAttachment={m.pendingAttachment}
+                      attachmentCacheScope={attachmentScope}
                       onRetry={handleRetry}
                     />
                   </li>
@@ -1187,6 +1235,17 @@ export function ChatRoom() {
           username={otherUsername}
           avatarId={otherAvatarId}
           onClose={() => setContactDetailOpen(false)}
+        />
+      ) : null}
+
+      {deleteOpen ? (
+        <DeleteConversationDialog
+          peerName={otherDisplayName}
+          confirming={deleting}
+          onConfirm={() => void confirmDeleteConversation()}
+          onCancel={() => {
+            if (!deleting) setDeleteOpen(false);
+          }}
         />
       ) : null}
       <div

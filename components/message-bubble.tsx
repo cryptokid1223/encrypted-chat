@@ -25,6 +25,7 @@ export type MessageBubbleProps = {
   senderLabel?: string;
   senderId?: string;
   decryptFailed?: boolean;
+  attachmentCacheScope?: string;
   onRetry?: (id: string) => void;
 };
 
@@ -110,6 +111,7 @@ export const MessageBubble = memo(function MessageBubble({
   senderLabel,
   senderId,
   decryptFailed,
+  attachmentCacheScope,
   onRetry,
 }: MessageBubbleProps) {
   const radiusClass = bubbleRadiusClass(isMine, isLastInGroup);
@@ -207,6 +209,7 @@ export const MessageBubble = memo(function MessageBubble({
                 localPreviewUrl={localPreviewUrl}
                 isPending={isPending}
                 failed={failed}
+                cacheScope={attachmentCacheScope}
               />
               {showTime && isVisualMedia ? (
                 <BubbleTimestamp

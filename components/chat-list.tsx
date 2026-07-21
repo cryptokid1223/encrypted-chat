@@ -11,9 +11,18 @@ import { fetchConversationPreview, previewFromMessageRow } from "@/lib/conversat
 import { contactMatchesQuery, displayName } from "@/lib/display-name";
 import { hasPrivateKey, loadPrivateKey } from "@/lib/keystore";
 import type { EncryptedMessageRow } from "@/lib/message-decrypt";
-import { fetchMyGroups, fetchGroupForInbox, type GroupRow } from "@/lib/groups";
+import { fetchMyGroups, fetchGroupForInbox, fetchLeftGroupRemnants, type GroupRow } from "@/lib/groups";
 import { consumeGroupNotice } from "@/lib/groupNotice";
 import { WrapSetupBanner } from "@/components/wrap-setup-banner";
+import { DeleteConversationDialog } from "@/components/delete-conversation-dialog";
+import {
+  clearedAtFor,
+  fetchConversationClearsMap,
+  isVisibleInInbox,
+  markConversationCleared,
+  attachmentCacheScope,
+} from "@/lib/conversationClear";
+import { purgeConversationAttachmentCache } from "@/lib/attachmentCache";
 import {
   fetchGroupPreview,
   previewFromGroupMessageRow,
@@ -46,6 +55,7 @@ type GroupListRow = GroupRow & {
   lastSenderId: string | null;
   lastSenderUsername: string | null;
   unreadCount: number;
+  isLeft?: boolean;
 };
 
 function sortGroupsByActivity(rows: GroupListRow[]): GroupListRow[] {
@@ -127,6 +137,7 @@ type InboxItem =
       lastSenderId: string | null;
       lastSenderUsername: string | null;
       unreadCount: number;
+      isLeft?: boolean;
     };
 
 /** Inbox timestamp: time today, weekday within 7 days, else locale date. */
@@ -267,6 +278,25 @@ function PullRefreshSpinner({
   );
 }
 
+function useLongPress(onLongPress: () => void) {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  return {
+    onTouchStart: () => {
+      timerRef.current = setTimeout(onLongPress, 500);
+    },
+    onTouchEnd: () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    },
+    onTouchMove: () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    },
+    onContextMenu: (e: React.MouseEvent) => {
+      e.preventDefault();
+      onLongPress();
+    },
+  };
+}
+
 const ConversationRowItem = memo(function ConversationRowItem({
   id,
   otherUsername,
@@ -279,6 +309,7 @@ const ConversationRowItem = memo(function ConversationRowItem({
   unreadCount,
   active,
   showSeparator,
+  onDeleteRequest,
 }: {
   id: string;
   otherUsername: string;
@@ -291,9 +322,11 @@ const ConversationRowItem = memo(function ConversationRowItem({
   unreadCount: number;
   active: boolean;
   showSeparator: boolean;
+  onDeleteRequest?: () => void;
 }) {
   const label = displayName({ username: otherUsername, nickname });
   const unread = unreadCount > 0;
+  const longPress = useLongPress(() => onDeleteRequest?.());
   const preview = formatInboxPreviewLine({
     preview: lastPreview,
     myUserId,
@@ -312,6 +345,7 @@ const ConversationRowItem = memo(function ConversationRowItem({
       className={`row-press flex h-[var(--inbox-row-height)] min-w-0 items-center gap-[var(--sp-3)] px-[var(--sp-4)] ${
         active ? "bg-[var(--surface)]" : ""
       }`}
+      {...(onDeleteRequest ? longPress : {})}
     >
       <Avatar
         avatarId={otherAvatarId}
@@ -363,6 +397,8 @@ const GroupRowItem = memo(function GroupRowItem({
   unreadCount,
   active,
   showSeparator,
+  isLeft,
+  onDeleteRequest,
 }: {
   id: string;
   name: string;
@@ -376,8 +412,11 @@ const GroupRowItem = memo(function GroupRowItem({
   unreadCount: number;
   active: boolean;
   showSeparator: boolean;
+  isLeft?: boolean;
+  onDeleteRequest?: () => void;
 }) {
   const unread = unreadCount > 0;
+  const longPress = useLongPress(() => onDeleteRequest?.());
   const senderLabel =
     lastSenderUsername != null
       ? displayName({
@@ -404,6 +443,7 @@ const GroupRowItem = memo(function GroupRowItem({
       className={`row-press flex h-[var(--inbox-row-height)] min-w-0 items-center gap-[var(--sp-3)] px-[var(--sp-4)] ${
         active ? "bg-[var(--surface)]" : ""
       }`}
+      {...(isLeft && onDeleteRequest ? longPress : {})}
     >
       <GroupAvatar avatarId={avatarId} size={52} className="shrink-0" />
       <div
@@ -454,6 +494,12 @@ export function ChatList({
   const [myUserId, setMyUserId] = useState<string | null>(null);
   const [listScrolled, setListScrolled] = useState(false);
   const [groupNotice, setGroupNotice] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    kind: "dm" | "group";
+    id: string;
+    peerName: string;
+  } | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const conversationsRef = useRef(conversations);
@@ -578,6 +624,7 @@ export function ChatList({
       lastSenderId: g.lastSenderId,
       lastSenderUsername: g.lastSenderUsername,
       unreadCount: g.unreadCount,
+      isLeft: g.isLeft,
     }));
     return sortInboxByActivity([...dm, ...grp]);
   }, [conversations, groups]);
@@ -653,7 +700,7 @@ export function ChatList({
         myPrivateKeyRef.current = myPrivateKey;
       }
 
-      const [convRows, groupRows] = await Promise.all([
+      const [convRows, groupRows, leftRemnants, clearsMap] = await Promise.all([
         supabase
           .from("conversations")
           .select("id, participant_a, participant_b, created_at")
@@ -664,7 +711,15 @@ export function ChatList({
             return data;
           }),
         fetchMyGroups(user.id),
+        fetchLeftGroupRemnants(user.id),
+        fetchConversationClearsMap(),
       ]);
+
+      const activeGroupIds = new Set(groupRows.map((g) => g.id));
+      const mergedGroupRows = [
+        ...groupRows,
+        ...leftRemnants.filter((g) => !activeGroupIds.has(g.id)),
+      ];
 
       await loadNicknames();
 
@@ -681,9 +736,11 @@ export function ChatList({
         ]),
       );
 
-      const nextGroups: GroupListRow[] = await Promise.all(
-        groupRows.map(async (g) => {
+      const nextGroups = (
+        await Promise.all(
+          mergedGroupRows.map(async (g): Promise<GroupListRow | null> => {
           const prior = prevGroupById.get(g.id);
+          const groupCleared = clearedAtFor(clearsMap, "group", g.id);
           let lastActivity = prior?.lastActivity ?? g.createdAt;
           let lastPreview = prior?.lastPreview ?? "No messages yet";
           let lastSenderId = prior?.lastSenderId ?? null;
@@ -696,7 +753,9 @@ export function ChatList({
                 user.id,
                 myPrivateKey,
                 g.createdAt,
+                groupCleared,
               );
+              if (!preview) return null;
               lastActivity = preview.lastActivity;
               lastPreview = preview.lastPreview;
               lastSenderId = preview.lastSenderId;
@@ -706,7 +765,11 @@ export function ChatList({
             }
           }
 
-          return {
+          if (!isVisibleInInbox(lastActivity, groupCleared)) {
+            return null;
+          }
+
+          const row: GroupListRow = {
             ...g,
             lastActivity,
             lastPreview,
@@ -714,8 +777,13 @@ export function ChatList({
             lastSenderUsername,
             unreadCount: prior?.unreadCount ?? 0,
           };
+          if ("isLeft" in g && g.isLeft) {
+            row.isLeft = true;
+          }
+          return row;
         }),
-      );
+        )
+      ).filter((row): row is GroupListRow => row !== null);
 
       let nextConversations: ConversationRow[] = [];
 
@@ -757,8 +825,9 @@ export function ChatList({
           ]),
         );
 
-        nextConversations = await Promise.all(
-          convRows.map(async (row) => {
+        nextConversations = (
+          await Promise.all(
+            convRows.map(async (row) => {
             const otherId =
               row.participant_a === user.id
                 ? row.participant_b
@@ -766,12 +835,7 @@ export function ChatList({
             const profile = profileById.get(otherId as string);
             const createdAt = row.created_at as string;
             const prior = prevById.get(row.id as string);
-            const lastActivity =
-              prior &&
-              new Date(prior.lastActivity).getTime() >
-                new Date(createdAt).getTime()
-                ? prior.lastActivity
-                : createdAt;
+            const dmCleared = clearedAtFor(clearsMap, "dm", row.id as string);
 
             const otherPublicKey = profile?.public_key ?? "";
             otherPublicKeyByConvRef.current.set(
@@ -781,22 +845,37 @@ export function ChatList({
 
             let lastPreview = prior?.lastPreview ?? "Encrypted message";
             let lastSenderId = prior?.lastSenderId ?? null;
-            if (
-              myPrivateKey &&
-              otherPublicKey &&
-              (!prior?.lastPreview || prior.lastActivity !== lastActivity)
-            ) {
+            let lastActivity = createdAt;
+
+            if (myPrivateKey && otherPublicKey) {
               try {
                 const preview = await fetchConversationPreview(
                   row.id as string,
                   otherPublicKey,
                   myPrivateKey,
+                  dmCleared,
                 );
+                if (!preview) return null;
                 lastPreview = preview.text;
                 lastSenderId = preview.senderId;
+                lastActivity = preview.lastActivity;
               } catch {
                 lastPreview = "Encrypted message";
               }
+            } else if (prior && isVisibleInInbox(prior.lastActivity, dmCleared)) {
+              lastActivity =
+                new Date(prior.lastActivity).getTime() >
+                new Date(createdAt).getTime()
+                  ? prior.lastActivity
+                  : createdAt;
+              lastPreview = prior.lastPreview;
+              lastSenderId = prior.lastSenderId;
+            } else if (!isVisibleInInbox(createdAt, dmCleared)) {
+              return null;
+            }
+
+            if (!isVisibleInInbox(lastActivity, dmCleared)) {
+              return null;
             }
 
             return {
@@ -811,7 +890,8 @@ export function ChatList({
               unreadCount: prior?.unreadCount ?? 0,
             };
           }),
-        );
+          )
+        ).filter((row): row is ConversationRow => row !== null);
       }
 
       const unreadRows = await fetchUnreadCounts();
@@ -849,6 +929,34 @@ export function ChatList({
   const handlePullRefresh = useCallback(async () => {
     await Promise.all([loadConversations(), refreshProfile()]);
   }, [loadConversations, refreshProfile]);
+
+  const confirmDeleteConversation = useCallback(async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const result = await markConversationCleared(
+        deleteTarget.kind,
+        deleteTarget.id,
+      );
+      if (!result.ok) {
+        setListError(result.error);
+        return;
+      }
+      purgeConversationAttachmentCache(
+        attachmentCacheScope(deleteTarget.kind, deleteTarget.id),
+      );
+      if (deleteTarget.kind === "dm") {
+        setConversations((prev) =>
+          prev.filter((c) => c.id !== deleteTarget.id),
+        );
+      } else {
+        setGroups((prev) => prev.filter((g) => g.id !== deleteTarget.id));
+      }
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
+    }
+  }, [deleteTarget]);
 
   const {
     contentStyle: pullContentStyle,
@@ -1154,7 +1262,7 @@ export function ChatList({
           (payload) => {
             const row = payload.old as GroupMemberInsert;
             if (!row?.group_id) return;
-            setGroups((prev) => prev.filter((g) => g.id !== row.group_id));
+            void loadConversations();
           },
         )
         .on(
@@ -1327,6 +1435,17 @@ export function ChatList({
                         unreadCount={item.unreadCount}
                         active={activeGroupId === item.id}
                         showSeparator={index !== filteredInbox.length - 1}
+                        isLeft={item.isLeft}
+                        onDeleteRequest={
+                          item.isLeft
+                            ? () =>
+                                setDeleteTarget({
+                                  kind: "group",
+                                  id: item.id,
+                                  peerName: item.name,
+                                })
+                            : undefined
+                        }
                       />
                     ) : (
                       <ConversationRowItem
@@ -1341,6 +1460,16 @@ export function ChatList({
                         unreadCount={item.unreadCount}
                         active={activeConversationId === item.id}
                         showSeparator={index !== filteredInbox.length - 1}
+                        onDeleteRequest={() =>
+                          setDeleteTarget({
+                            kind: "dm",
+                            id: item.id,
+                            peerName: displayName({
+                              username: item.otherUsername,
+                              nickname: nicknames[item.otherUserId] ?? null,
+                            }),
+                          })
+                        }
                       />
                     )}
                   </li>
@@ -1357,6 +1486,17 @@ export function ChatList({
         onClose={() => setComposeOpen(false)}
         onInboxChanged={() => void loadConversations()}
       />
+
+      {deleteTarget ? (
+        <DeleteConversationDialog
+          peerName={deleteTarget.peerName}
+          confirming={deleting}
+          onConfirm={() => void confirmDeleteConversation()}
+          onCancel={() => {
+            if (!deleting) setDeleteTarget(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

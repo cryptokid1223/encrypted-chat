@@ -1,4 +1,5 @@
 import { decryptMessage } from "@/lib/crypto";
+import { applyAfterClear } from "@/lib/conversationClear";
 import { messagePreviewText } from "@/lib/messageContent";
 import { cacheBody, getCachedBody } from "@/lib/message-decrypt";
 import { createClient } from "@/lib/supabase/client";
@@ -113,31 +114,29 @@ export async function fetchGroupPreview(
   myUserId: string,
   myPrivateKey: string,
   fallbackActivity: string,
+  clearedAt?: string | null,
 ): Promise<{
   lastActivity: string;
   lastPreview: string;
   lastSenderId: string | null;
   lastSenderUsername: string | null;
-}> {
+} | null> {
   const supabase = createClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("group_messages")
     .select(
       "id, group_id, message_uuid, sender_id, recipient_id, ciphertext, nonce, created_at",
     )
     .eq("group_id", groupId)
-    .eq("recipient_id", myUserId)
+    .eq("recipient_id", myUserId);
+  query = applyAfterClear(query, clearedAt ?? undefined);
+  const { data, error } = await query
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
   if (error || !data) {
-    return {
-      lastActivity: fallbackActivity,
-      lastPreview: "No messages yet",
-      lastSenderId: null,
-      lastSenderUsername: null,
-    };
+    return null;
   }
 
   const row = data as GroupMessageRow;

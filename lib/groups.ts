@@ -245,6 +245,59 @@ export async function fetchMyGroups(userId: string): Promise<GroupRow[]> {
   return groups;
 }
 
+/** Groups the user left but still has message history on this device. */
+export async function fetchLeftGroupRemnants(
+  userId: string,
+): Promise<(GroupRow & { isLeft: true })[]> {
+  const supabase = createClient();
+
+  const { data: msgRows, error: msgError } = await supabase
+    .from("group_messages")
+    .select("group_id")
+    .eq("recipient_id", userId);
+
+  if (msgError || !msgRows?.length) {
+    return [];
+  }
+
+  const groupIds = [
+    ...new Set(
+      msgRows.map((row) => row.group_id as string).filter(Boolean),
+    ),
+  ];
+  if (groupIds.length === 0) return [];
+
+  const { data: memberships } = await supabase
+    .from("group_members")
+    .select("group_id")
+    .eq("user_id", userId)
+    .in("group_id", groupIds);
+
+  const memberIds = new Set(
+    (memberships ?? []).map((row) => row.group_id as string),
+  );
+  const leftIds = groupIds.filter((id) => !memberIds.has(id));
+  if (leftIds.length === 0) return [];
+
+  const { data: groups, error: groupsError } = await supabase
+    .from("groups")
+    .select("id, name, avatar, created_at")
+    .in("id", leftIds);
+
+  if (groupsError || !groups?.length) {
+    return [];
+  }
+
+  return groups.map((g) => ({
+    id: g.id as string,
+    name: g.name as string,
+    avatarId: (g.avatar as string | null) ?? null,
+    memberCount: 0,
+    createdAt: g.created_at as string,
+    isLeft: true as const,
+  }));
+}
+
 export async function fetchGroupMembersWithKeys(
   groupId: string,
   userId: string,

@@ -1,3 +1,4 @@
+import { applyAfterClear } from "@/lib/conversationClear";
 import { messagePreviewText } from "@/lib/messageContent";
 import {
   decryptMessageRow,
@@ -9,18 +10,21 @@ export async function fetchConversationPreview(
   conversationId: string,
   theirPublicKey: string,
   myPrivateKey: string,
-): Promise<{ text: string; senderId: string | null }> {
+  clearedAt?: string | null,
+): Promise<{ text: string; senderId: string | null; lastActivity: string } | null> {
   const supabase = createClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("messages")
     .select("id, sender_id, ciphertext, nonce, created_at")
-    .eq("conversation_id", conversationId)
+    .eq("conversation_id", conversationId);
+  query = applyAfterClear(query, clearedAt ?? undefined);
+  const { data, error } = await query
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
   if (error || !data) {
-    return { text: "Encrypted message", senderId: null };
+    return null;
   }
 
   const decrypted = await decryptMessageRow(
@@ -31,6 +35,7 @@ export async function fetchConversationPreview(
   return {
     text: messagePreviewText(decrypted.body),
     senderId: (data.sender_id as string) ?? null,
+    lastActivity: data.created_at as string,
   };
 }
 

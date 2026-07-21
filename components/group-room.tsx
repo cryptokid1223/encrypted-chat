@@ -53,6 +53,7 @@ import {
   VideoUnsupportedError,
 } from "@/lib/imageProcessing";
 import { hasPrivateKey, loadPrivateKey } from "@/lib/keystore";
+import { applyAfterClear, attachmentCacheScope, fetchClearedAt } from "@/lib/conversationClear";
 import { buildAttachmentBody } from "@/lib/messageContent";
 import { createClient } from "@/lib/supabase/client";
 import { stopVoicePlayback } from "@/lib/voicePlayer";
@@ -154,6 +155,7 @@ export function GroupRoom() {
   const hasMoreHistoryRef = useRef(true);
   const loadingOlderRef = useRef(false);
   const historyCursorRef = useRef<HistoryCursor | null>(null);
+  const clearedAtRef = useRef<string | null>(null);
   const pendingScrollAnchorRef = useRef<ScrollAnchor | null>(null);
   const groupIdRef = useRef(groupId);
   const pendingFileRef = useRef<Map<string, File>>(new Map());
@@ -325,14 +327,16 @@ export function GroupRoom() {
     try {
       const supabase = createClient();
       const startedFor = groupIdRef.current;
-      const { data: rows, error: messagesError } = await supabase
+      let query = supabase
         .from("group_messages")
         .select(
           "id, group_id, message_uuid, sender_id, recipient_id, ciphertext, nonce, created_at",
         )
         .eq("group_id", startedFor)
         .eq("recipient_id", userId)
-        .or(olderThanOrFilter(cursor))
+        .or(olderThanOrFilter(cursor));
+      query = applyAfterClear(query, clearedAtRef.current);
+      const { data: rows, error: messagesError } = await query
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
         .limit(GROUP_FETCH_LIMIT);
@@ -493,13 +497,18 @@ export function GroupRoom() {
           senderKeyMap.set(member.userId, member.publicKey);
         }
 
-        const { data: rows, error: messagesError } = await supabase
+        const clearedAt = await fetchClearedAt("group", groupId);
+        clearedAtRef.current = clearedAt;
+
+        let messagesQuery = supabase
           .from("group_messages")
           .select(
             "id, group_id, message_uuid, sender_id, recipient_id, ciphertext, nonce, created_at",
           )
           .eq("group_id", groupId)
-          .eq("recipient_id", user.id)
+          .eq("recipient_id", user.id);
+        messagesQuery = applyAfterClear(messagesQuery, clearedAt);
+        const { data: rows, error: messagesError } = await messagesQuery
           .order("created_at", { ascending: false })
           .order("id", { ascending: false })
           .limit(GROUP_FETCH_LIMIT);
@@ -1403,6 +1412,7 @@ export function GroupRoom() {
                         senderLabel={senderLabel}
                         senderId={m.senderId}
                         onRetry={handleRetry}
+                        attachmentCacheScope={attachmentCacheScope("group", groupId)}
                       />
                     </li>
                   );
