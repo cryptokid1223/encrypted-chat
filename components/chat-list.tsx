@@ -16,6 +16,7 @@ import { fetchMyGroups, fetchGroupForInbox, fetchLeftGroupRemnants, type GroupRo
 import { consumeGroupNotice } from "@/lib/groupNotice";
 import { WrapSetupBanner } from "@/components/wrap-setup-banner";
 import { DeleteConversationDialog } from "@/components/delete-conversation-dialog";
+import { PushPrimingSheet } from "@/components/push-priming-sheet";
 import {
   clearedAtFor,
   fetchConversationClearsMap,
@@ -37,6 +38,15 @@ import {
   unreadCountMapFromRows,
   unreadMapKey,
 } from "@/lib/readState";
+import {
+  getPushPermissionState,
+  isPushAvailable,
+  registerPush,
+} from "@/lib/push";
+import {
+  recordPushPrimingNotNow,
+  shouldShowPushPriming,
+} from "@/lib/push-priming";
 
 type ConversationRow = {
   id: string;
@@ -507,6 +517,9 @@ export function ChatList({
     peerName: string;
   } | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [pushPrimingOpen, setPushPrimingOpen] = useState(false);
+  const [pushPrimingBusy, setPushPrimingBusy] = useState(false);
+  const pushPrimingCheckedRef = useRef(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const conversationsRef = useRef(conversations);
@@ -544,6 +557,20 @@ export function ChatList({
   useEffect(() => {
     activeGroupIdRef.current = activeGroupId ?? null;
   }, [activeGroupId]);
+
+  useEffect(() => {
+    if (!isPushAvailable()) return;
+    if (!myUserId || loadingList) return;
+    if (pushPrimingCheckedRef.current) return;
+    pushPrimingCheckedRef.current = true;
+
+    void (async () => {
+      const permission = await getPushPermissionState();
+      if (shouldShowPushPriming(permission)) {
+        setPushPrimingOpen(true);
+      }
+    })();
+  }, [myUserId, loadingList]);
 
   // Open conversation → local unread clears immediately (DB write is in the room).
   useEffect(() => {
@@ -1654,6 +1681,23 @@ export function ChatList({
           onConfirm={() => void confirmDeleteConversation()}
           onCancel={() => {
             if (!deleting) setDeleteTarget(null);
+          }}
+        />
+      ) : null}
+
+      {pushPrimingOpen ? (
+        <PushPrimingSheet
+          enabling={pushPrimingBusy}
+          onEnable={() => {
+            setPushPrimingBusy(true);
+            void registerPush().finally(() => {
+              setPushPrimingBusy(false);
+              setPushPrimingOpen(false);
+            });
+          }}
+          onNotNow={() => {
+            recordPushPrimingNotNow();
+            setPushPrimingOpen(false);
           }}
         />
       ) : null}

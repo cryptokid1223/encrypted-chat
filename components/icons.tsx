@@ -436,6 +436,25 @@ export function VideoIcon(props: IconProps) {
   );
 }
 
+export function BellIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
+      <path
+        d="M12 3a4.5 4.5 0 0 0-4.5 4.5v2.8c0 .5-.2 1-.5 1.4L5.8 14.8A1.2 1.2 0 0 0 7 16.5h10a1.2 1.2 0 0 0 1.2-1.7l-1.2-1.6a2 2 0 0 1-.5-1.4V7.5A4.5 4.5 0 0 0 12 3Z"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M10 18.5a2 2 0 0 0 4 0"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export function CloseIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>

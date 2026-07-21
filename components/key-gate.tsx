@@ -22,6 +22,7 @@ import {
   saveRestoredPrivateKey,
 } from "@/lib/keystore";
 import { revokeAllAttachmentUrls } from "@/lib/attachmentCache";
+import { logoutWithPushCleanup } from "@/components/push-provider";
 import { createClient } from "@/lib/supabase/client";
 
 const GATE_SAFETY_MS = 6000;
@@ -209,8 +210,7 @@ export function KeyGate({ children }: { children: ReactNode }) {
     setLoggingOut(true);
     try {
       const supabase = createClient();
-      await supabase.auth.signOut();
-      // New session/account should not reuse the previous in-memory decrypted key.
+      await logoutWithPushCleanup(() => supabase.auth.signOut());
       invalidatePrivateKeyCache();
       revokeAllAttachmentUrls();
       router.replace("/login");

@@ -1,0 +1,4 @@
+# Supabase local/dev config. Link your project with: supabase link --project-ref <ref>
+
+[functions.send-push]
+verify_jwt = true

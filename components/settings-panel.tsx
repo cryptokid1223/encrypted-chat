@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AvatarPicker } from "@/components/avatar-picker";
 import {
   ChevronLeftIcon,
+  BellIcon,
   InfoIcon,
   KeyIcon,
   MoonIcon,
@@ -14,6 +15,8 @@ import {
   QrCodeIcon,
   SparkleIcon,
 } from "@/components/icons";
+import { PushDeniedSettingsDialog } from "@/components/push-priming-sheet";
+import { logoutWithPushCleanup } from "@/components/push-provider";
 import { KeyTransferModal } from "@/components/key-transfer-modal";
 import {
   SettingsConfirmDialog,
@@ -30,6 +33,14 @@ import { useKeyGate } from "@/components/key-gate";
 import { Avatar } from "@/lib/avatars";
 import { invalidatePrivateKeyCache, loadPrivateKey, removePrivateKey } from "@/lib/keystore";
 import { revokeAllAttachmentUrls } from "@/lib/attachmentCache";
+import {
+  getPushPermissionState,
+  isPushAvailable,
+  isPushEnabledForDevice,
+  openAppNotificationSettings,
+  registerPush,
+  unregisterPush,
+} from "@/lib/push";
 import { createClient } from "@/lib/supabase/client";
 
 const APP_VERSION = "0.1.0";
@@ -80,10 +91,43 @@ export function SettingsPanel() {
   const [aiAssistEnabled, setAiAssistEnabledState] = useState(true);
   const [removeKeyOpen, setRemoveKeyOpen] = useState(false);
   const [removingKey, setRemovingKey] = useState(false);
+  const [pushAvailable] = useState(() => isPushAvailable());
+  const [notificationsOn, setNotificationsOn] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushDeniedOpen, setPushDeniedOpen] = useState(false);
 
   useEffect(() => {
     setAiAssistEnabledState(getAiAssistEnabled());
   }, []);
+
+  const refreshPushToggle = useCallback(async () => {
+    if (!pushAvailable) return;
+    setNotificationsOn(await isPushEnabledForDevice());
+  }, [pushAvailable]);
+
+  useEffect(() => {
+    void refreshPushToggle();
+  }, [refreshPushToggle]);
+
+  useEffect(() => {
+    if (!pushAvailable) return;
+
+    let remove: (() => void) | undefined;
+
+    void import("@capacitor/app").then(({ App }) => {
+      void App.addListener("resume", () => {
+        void refreshPushToggle();
+      }).then((handle) => {
+        remove = () => {
+          void handle.remove();
+        };
+      });
+    });
+
+    return () => {
+      remove?.();
+    };
+  }, [pushAvailable, refreshPushToggle]);
 
   const navigateBack = useCallback(() => {
     router.push(returnTo);
@@ -142,8 +186,7 @@ export function SettingsPanel() {
     setLoggingOut(true);
     try {
       const supabase = createClient();
-      await supabase.auth.signOut();
-      // Session + in-memory key cache clear; persisted per-user keys stay on device.
+      await logoutWithPushCleanup(() => supabase.auth.signOut());
       invalidatePrivateKeyCache();
       revokeAllAttachmentUrls();
       router.replace("/login");
@@ -151,6 +194,29 @@ export function SettingsPanel() {
     } catch {
       setLoggingOut(false);
       setLogoutOpen(false);
+    }
+  }
+
+  async function handleNotificationsToggle(next: boolean) {
+    if (!pushAvailable || pushBusy) return;
+    setPushBusy(true);
+    try {
+      if (next) {
+        const permission = await getPushPermissionState();
+        if (permission === "denied") {
+          setPushDeniedOpen(true);
+          return;
+        }
+        const result = await registerPush();
+        if (!result.ok && result.permission === "denied") {
+          setPushDeniedOpen(true);
+        }
+      } else {
+        await unregisterPush();
+      }
+    } finally {
+      setPushBusy(false);
+      await refreshPushToggle();
     }
   }
 
@@ -275,6 +341,20 @@ export function SettingsPanel() {
               isLast
             />
           </SettingsSection>
+
+          {pushAvailable ? (
+            <SettingsSection footer="Alerts when new messages arrive. Notification text never includes message content.">
+              <SettingsToggleRow
+                icon={<BellIcon />}
+                iconTint="var(--settings-tint-orange)"
+                label="Notifications"
+                checked={notificationsOn}
+                disabled={pushBusy}
+                onChange={(next) => void handleNotificationsToggle(next)}
+                isLast
+              />
+            </SettingsSection>
+          ) : null}
 
           <SettingsSection
             title="Message assistant"
@@ -402,6 +482,16 @@ export function SettingsPanel() {
           onCancel={() => setRemoveKeyOpen(false)}
           confirming={removingKey}
           destructive
+        />
+      ) : null}
+
+      {pushDeniedOpen ? (
+        <PushDeniedSettingsDialog
+          onOpenSettings={() => {
+            setPushDeniedOpen(false);
+            void openAppNotificationSettings();
+          }}
+          onCancel={() => setPushDeniedOpen(false)}
         />
       ) : null}
     </div>
