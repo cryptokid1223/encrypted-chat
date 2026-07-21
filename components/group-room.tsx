@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChatComposer, type VoiceRecordingPayload } from "@/components/chat-composer";
 import { GroupAvatar } from "@/components/group-avatar";
+import { DeleteForEveryoneDialog } from "@/components/delete-message-dialog";
 import { GroupInfo } from "@/components/group-info";
 import { ChevronLeftIcon } from "@/components/icons";
 import { useKeyGate } from "@/components/key-gate";
@@ -56,13 +57,21 @@ import { hasPrivateKey, loadPrivateKey } from "@/lib/keystore";
 import { applyAfterClear, attachmentCacheScope, fetchClearedAt } from "@/lib/conversationClear";
 import { buildAttachmentBody, parseMessageBody } from "@/lib/messageContent";
 import {
+  applyIncomingDelete,
   applyIncomingEdit,
+  buildDeleteEnvelopeBody,
   buildEditBody,
+  canDeleteForEveryone,
   canEditMessage,
+  deleteMetaFromMessage,
   editMetaFromMessage,
   integrateMessageBatch,
   mergeMessagesWithEdits,
+  purgeAttachmentsForBody,
+  removeMessageById,
+  type PendingMutations,
 } from "@/lib/messageEdits";
+import { fetchMessageHides, markMessageHidden } from "@/lib/messageHide";
 import { createClient } from "@/lib/supabase/client";
 import { stopVoicePlayback } from "@/lib/voicePlayer";
 import { InlineSpinner } from "@/components/inline-spinner";
@@ -73,8 +82,11 @@ type DisplayMessage = {
   body: string;
   createdAt: string;
   editOf?: string | null;
+  deleteOf?: string | null;
   edited?: boolean;
+  deleted?: boolean;
   editAppliedAt?: string;
+  deleteAppliedAt?: string;
   failed?: boolean;
   decryptFailed?: boolean;
   localPreviewUrl?: string;
@@ -85,7 +97,12 @@ type DisplayMessage = {
 };
 
 const GROUP_MESSAGE_SELECT =
-  "id, group_id, message_uuid, sender_id, recipient_id, ciphertext, nonce, created_at, edit_of";
+  "id, group_id, message_uuid, sender_id, recipient_id, ciphertext, nonce, created_at, edit_of, delete_of";
+
+const emptyPending = (): PendingMutations<DisplayMessage> => ({
+  pendingEdits: new Map(),
+  pendingDeletes: new Map(),
+});
 
 function toDisplayMessage(m: {
   id: string;
@@ -93,6 +110,7 @@ function toDisplayMessage(m: {
   body: string;
   createdAt: string;
   editOf?: string | null;
+  deleteOf?: string | null;
   decryptFailed?: boolean;
 }): DisplayMessage {
   return {
@@ -101,6 +119,7 @@ function toDisplayMessage(m: {
     body: m.body,
     createdAt: m.createdAt,
     editOf: m.editOf,
+    deleteOf: m.deleteOf,
     decryptFailed: m.decryptFailed,
   };
 }
@@ -178,7 +197,16 @@ export function GroupRoom() {
   const membersRef = useRef<GroupMemberWithKey[]>([]);
   const senderPublicKeyByUserIdRef = useRef(new Map<string, string>());
   const pendingByUuidRef = useRef<
-    Map<string, { tempId: string; body: string; isEdit?: boolean; targetId?: string }>
+    Map<
+      string,
+      {
+        tempId: string;
+        body: string;
+        isEdit?: boolean;
+        isDelete?: boolean;
+        targetId?: string;
+      }
+    >
   >(new Map());
   const initialMessageIdsRef = useRef<Set<string> | null>(null);
   const [loadedGroupId, setLoadedGroupId] = useState<string | null>(null);
@@ -188,9 +216,15 @@ export function GroupRoom() {
   const loadingOlderRef = useRef(false);
   const historyCursorRef = useRef<HistoryCursor | null>(null);
   const clearedAtRef = useRef<string | null>(null);
-  const pendingEditsRef = useRef<Map<string, DisplayMessage>>(new Map());
+  const pendingMutationsRef = useRef<PendingMutations<DisplayMessage>>(
+    emptyPending(),
+  );
+  const hiddenIdsRef = useRef<Set<string>>(new Set());
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editInitialText, setEditInitialText] = useState<string | null>(null);
+  const [deleteForEveryoneTarget, setDeleteForEveryoneTarget] =
+    useState<DisplayMessage | null>(null);
+  const [deletingForEveryone, setDeletingForEveryone] = useState(false);
   const pendingScrollAnchorRef = useRef<ScrollAnchor | null>(null);
   const groupIdRef = useRef(groupId);
   const pendingFileRef = useRef<Map<string, File>>(new Map());
@@ -231,9 +265,11 @@ export function GroupRoom() {
     pendingScrollAnchorRef.current = null;
     pendingFileRef.current.clear();
     pendingAudioRef.current.clear();
-    pendingEditsRef.current.clear();
+    pendingMutationsRef.current = emptyPending();
+    hiddenIdsRef.current.clear();
     setEditingMessageId(null);
     setEditInitialText(null);
+    setDeleteForEveryoneTarget(null);
   }, [groupId]);
 
   const {
@@ -420,11 +456,15 @@ export function GroupRoom() {
       const integrated = integrateMessageBatch(
         messagesRef.current,
         fresh,
-        pendingEditsRef.current,
+        pendingMutationsRef.current,
         clearedAtRef.current,
+        hiddenIdsRef.current,
         true,
       );
-      pendingEditsRef.current = integrated.pendingEdits;
+      pendingMutationsRef.current = {
+        pendingEdits: integrated.pendingEdits,
+        pendingDeletes: integrated.pendingDeletes,
+      };
       setMessages(integrated.messages);
     } finally {
       loadingOlderRef.current = false;
@@ -537,6 +577,8 @@ export function GroupRoom() {
 
         const clearedAt = await fetchClearedAt("group", groupId);
         clearedAtRef.current = clearedAt;
+        const hiddenIds = await fetchMessageHides(groupId);
+        hiddenIdsRef.current = hiddenIds;
 
         let messagesQuery = supabase
           .from("group_messages")
@@ -572,8 +614,12 @@ export function GroupRoom() {
         const merged = mergeMessagesWithEdits(
           decrypted.map((m) => toDisplayMessage(m)),
           clearedAt,
+          hiddenIds,
         );
-        pendingEditsRef.current = merged.pendingEdits;
+        pendingMutationsRef.current = {
+          pendingEdits: merged.pendingEdits,
+          pendingDeletes: merged.pendingDeletes,
+        };
 
         if (cancelled) return;
 
@@ -631,6 +677,9 @@ export function GroupRoom() {
                     if (pending.isEdit && pending.targetId) {
                       return;
                     }
+                    if (pending.isDelete && pending.targetId) {
+                      return;
+                    }
                     setMessages((prev) =>
                       prev.map((m) =>
                         m.id === pending.tempId
@@ -654,6 +703,22 @@ export function GroupRoom() {
                 );
 
                 if (cancelled) return;
+
+                const scope = attachmentCacheScope("group", groupId);
+
+                if (row.delete_of || deleteMetaFromMessage(display.body, row.delete_of)) {
+                  setMessages((prev) => {
+                    const applied = applyIncomingDelete(
+                      prev,
+                      toDisplayMessage(display),
+                      clearedAtRef.current,
+                      { purgeAttachments: true, cacheScope: scope },
+                    );
+                    return applied ?? prev;
+                  });
+                  seenMessageUuidsRef.current.add(display.id);
+                  return;
+                }
 
                 if (row.edit_of || editMetaFromMessage(display.body, row.edit_of)) {
                   setMessages((prev) => {
@@ -775,6 +840,126 @@ export function GroupRoom() {
       void supabase.removeChannel(channel);
     };
   }, [status, groupId, refreshMemberCache, router]);
+
+  const sendGroupDeleteForEveryone = useCallback(
+    (target: DisplayMessage) => {
+      const myId = myUserIdRef.current;
+      const myKey = myPrivateKeyRef.current;
+      const members = membersRef.current;
+      if (!myId || !myKey || members.length === 0) return;
+
+      const deleteOf = target.id;
+      const messageUuid = crypto.randomUUID();
+      const optimisticCreatedAt = new Date().toISOString();
+      const plaintext = buildDeleteEnvelopeBody(deleteOf);
+      const scope = attachmentCacheScope("group", groupId);
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === deleteOf
+            ? {
+                ...m,
+                deleted: true,
+                edited: false,
+                deleteAppliedAt: optimisticCreatedAt,
+                failed: false,
+              }
+            : m,
+        ),
+      );
+
+      purgeAttachmentsForBody(target.body, {
+        deleteFromStorage: true,
+        cacheScope: scope,
+      });
+
+      pendingByUuidRef.current.set(messageUuid, {
+        tempId: optimisticId(messageUuid),
+        body: plaintext,
+        isDelete: true,
+        targetId: deleteOf,
+      });
+
+      void (async () => {
+        setSending(true);
+        try {
+          const encryptedRows = await Promise.all(
+            members.map(async (member) => {
+              const { ciphertext, nonce } = await encryptMessage(
+                plaintext,
+                member.publicKey,
+                myKey,
+              );
+              return {
+                group_id: groupId,
+                message_uuid: messageUuid,
+                sender_id: myId,
+                recipient_id: member.userId,
+                ciphertext,
+                nonce,
+                delete_of: deleteOf,
+              };
+            }),
+          );
+
+          const supabase = createClient();
+          const { data: inserted, error: insertError } = await supabase
+            .from("group_messages")
+            .insert(encryptedRows)
+            .select(GROUP_MESSAGE_SELECT);
+
+          if (insertError || !inserted?.length) {
+            throw new Error("Could not delete message");
+          }
+
+          for (const row of inserted) {
+            seenRowIdsRef.current.add(row.id as string);
+          }
+          pendingByUuidRef.current.delete(messageUuid);
+          seenMessageUuidsRef.current.add(messageUuid);
+        } catch {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === deleteOf
+                ? {
+                    ...m,
+                    deleted: false,
+                    deleteAppliedAt: undefined,
+                    failed: true,
+                  }
+                : m,
+            ),
+          );
+        } finally {
+          setSending(false);
+        }
+      })();
+    },
+    [groupId],
+  );
+
+  const deleteForMe = useCallback(
+    async (messageId: string) => {
+      hiddenIdsRef.current.add(messageId);
+      setMessages((prev) => removeMessageById(prev, messageId));
+      const result = await markMessageHidden(messageId, groupId);
+      if (!result.ok) {
+        hiddenIdsRef.current.delete(messageId);
+        void fetchMessageHides(groupId).then((ids) => {
+          hiddenIdsRef.current = ids;
+        });
+      }
+    },
+    [groupId],
+  );
+
+  const confirmDeleteForEveryone = useCallback(() => {
+    if (!deleteForEveryoneTarget) return;
+    setDeletingForEveryone(true);
+    sendGroupDeleteForEveryone(deleteForEveryoneTarget);
+    setDeleteForEveryoneTarget(null);
+    setDeletingForEveryone(false);
+  }, [deleteForEveryoneTarget, sendGroupDeleteForEveryone]);
 
   const sendGroupMessage = useCallback(
     (
@@ -1502,6 +1687,7 @@ export function GroupRoom() {
                         }
                         failed={m.failed}
                         edited={m.edited}
+                        deleted={m.deleted}
                         decryptFailed={m.decryptFailed}
                         localPreviewUrl={m.localPreviewUrl}
                         pendingAttachment={m.pendingAttachment}
@@ -1511,9 +1697,21 @@ export function GroupRoom() {
                         attachmentCacheScope={attachmentCacheScope("group", groupId)}
                         onEditRequest={
                           mine &&
-                          canEditMessage(mine, m.body, m.createdAt) &&
+                          canEditMessage(mine, m.body, m.createdAt, m.deleted) &&
                           !editingMessageId
                             ? () => startEditMessage(m)
+                            : undefined
+                        }
+                        onDeleteForEveryoneRequest={
+                          mine &&
+                          canDeleteForEveryone(mine, m.createdAt, m.deleted) &&
+                          !editingMessageId
+                            ? () => setDeleteForEveryoneTarget(m)
+                            : undefined
+                        }
+                        onDeleteForMeRequest={
+                          !m.deleted && !editingMessageId
+                            ? () => void deleteForMe(m.id)
                             : undefined
                         }
                       />
@@ -1536,6 +1734,16 @@ export function GroupRoom() {
           editInitialText={editInitialText}
           onCancelEdit={cancelEditMessage}
         />
+
+      {deleteForEveryoneTarget ? (
+        <DeleteForEveryoneDialog
+          confirming={deletingForEveryone}
+          onConfirm={() => void confirmDeleteForEveryone()}
+          onCancel={() => {
+            if (!deletingForEveryone) setDeleteForEveryoneTarget(null);
+          }}
+        />
+      ) : null}
 
       {groupInfoOpen && myUserId ? (
         <GroupInfo

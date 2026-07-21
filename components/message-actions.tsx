@@ -33,7 +33,11 @@ export function MessageActionSheet({
   actions,
   onClose,
 }: {
-  actions: { label: string; onSelect: () => void }[];
+  actions: {
+    label: string;
+    onSelect: () => void;
+    destructive?: boolean;
+  }[];
   onClose: () => void;
 }) {
   return (
@@ -52,7 +56,11 @@ export function MessageActionSheet({
             key={action.label}
             type="button"
             role="menuitem"
-            className="pressable block w-full border-b border-[var(--row-separator)] px-[var(--sp-4)] py-[var(--sp-3)] text-left text-[length:var(--text-body)] text-[var(--text-primary)] last:border-b-0"
+            className={`pressable block w-full border-b border-[var(--row-separator)] px-[var(--sp-4)] py-[var(--sp-3)] text-left text-[length:var(--text-body)] last:border-b-0 ${
+              action.destructive
+                ? "text-[var(--danger)]"
+                : "text-[var(--text-primary)]"
+            }`}
             onClick={() => {
               action.onSelect();
               onClose();

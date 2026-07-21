@@ -8,6 +8,7 @@ import { PencilIcon, PeopleIcon, SearchIcon } from "@/components/icons";
 import { useNicknames } from "@/components/nicknames-context";
 import { useProfile } from "@/components/profile-context";
 import { fetchConversationPreview, previewFromMessageRow } from "@/lib/conversationPreview";
+import { DELETED_PREVIEW_TEXT } from "@/lib/messageContent";
 import { contactMatchesQuery, displayName } from "@/lib/display-name";
 import { hasPrivateKey, loadPrivateKey } from "@/lib/keystore";
 import type { EncryptedMessageRow } from "@/lib/message-decrypt";
@@ -82,6 +83,7 @@ type MessageInsert = {
   nonce: string;
   created_at: string;
   edit_of?: string | null;
+  delete_of?: string | null;
 };
 
 type GroupMessageInsert = {
@@ -94,6 +96,7 @@ type GroupMessageInsert = {
   nonce: string;
   created_at: string;
   edit_of?: string | null;
+  delete_of?: string | null;
 };
 
 type GroupMemberInsert = {
@@ -1092,6 +1095,25 @@ export function ChatList({
                 (c) => c.id === row.conversation_id,
               );
 
+              if (row.delete_of) {
+                if (conv?.lastMessageId !== row.delete_of) return;
+
+                if (conv) {
+                  pendingUpdateRef.current.set(row.conversation_id, {
+                    lastActivity: conv.lastActivity,
+                    lastPreview: DELETED_PREVIEW_TEXT,
+                    lastSenderId: conv.lastSenderId,
+                  });
+                  if (!flushTimerRef.current) {
+                    flushTimerRef.current = setTimeout(() => {
+                      flushTimerRef.current = null;
+                      flushPendingUpdates();
+                    }, 120);
+                  }
+                }
+                return;
+              }
+
               if (row.edit_of) {
                 if (conv?.lastMessageId !== row.edit_of) return;
 
@@ -1215,6 +1237,26 @@ export function ChatList({
 
             void (async () => {
               const grp = groupsRef.current.find((g) => g.id === row.group_id);
+
+              if (row.delete_of) {
+                if (grp?.lastMessageId !== row.delete_of) return;
+
+                if (grp) {
+                  pendingUpdateRef.current.set(row.group_id, {
+                    lastActivity: grp.lastActivity,
+                    lastPreview: DELETED_PREVIEW_TEXT,
+                    lastSenderId: grp.lastSenderId,
+                    lastSenderUsername: grp.lastSenderUsername,
+                  });
+                  if (!flushTimerRef.current) {
+                    flushTimerRef.current = setTimeout(() => {
+                      flushTimerRef.current = null;
+                      flushPendingUpdates();
+                    }, 120);
+                  }
+                }
+                return;
+              }
 
               if (row.edit_of) {
                 if (grp?.lastMessageId !== row.edit_of) return;

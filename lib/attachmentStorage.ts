@@ -18,3 +18,14 @@ export async function uploadEncryptedAttachment(
 
   return path;
 }
+
+/** Best-effort storage delete; failures must not block message-level delete. */
+export async function deleteEncryptedAttachment(path: string): Promise<void> {
+  if (!path) return;
+  try {
+    const supabase = createClient();
+    await supabase.storage.from("attachments").remove([path]);
+  } catch {
+    // Sender-only delete; ignore RLS/network failures.
+  }
+}

@@ -299,6 +299,13 @@ export function retryDecryptedAudioUrl(
   return retryDecryptedBlobUrl(metaToRef(meta), "image", cacheScope);
 }
 
+/** Revoke cached blob URLs for specific storage paths. */
+export function purgeAttachmentPaths(paths: string[]): void {
+  for (const path of paths) {
+    if (path) revokePathFromCaches(path);
+  }
+}
+
 /** Revoke cached blob URLs for one conversation scope. */
 export function purgeConversationAttachmentCache(scope: string): void {
   const paths = pathsByConversationScope.get(scope);

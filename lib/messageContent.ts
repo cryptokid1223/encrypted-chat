@@ -3,12 +3,20 @@ import type { AttachmentMeta } from "@/lib/fileCrypto";
 export type ParsedMessageBody =
   | { type: "text"; text: string }
   | { type: "attachment"; meta: AttachmentMeta }
-  | { type: "edit"; text: string; editOf: string };
+  | { type: "edit"; text: string; editOf: string }
+  | { type: "delete"; deleteOf: string };
+
+export const DELETED_MESSAGE_PLACEHOLDER = "🚫 This message was deleted";
+export const DELETED_PREVIEW_TEXT = "Message deleted";
 
 const CELESTH_PREFIX = '{"_celesth"';
 
 export function buildAttachmentBody(meta: AttachmentMeta): string {
   return JSON.stringify({ _celesth: "attachment", v: 1, meta });
+}
+
+export function buildDeleteBody(deleteOf: string): string {
+  return JSON.stringify({ _celesth: "delete", v: 1, deleteOf });
 }
 
 export function parseMessageBody(plaintext: string): ParsedMessageBody {
@@ -23,9 +31,17 @@ export function parseMessageBody(plaintext: string): ParsedMessageBody {
       meta?: AttachmentMeta;
       text?: string;
       editOf?: string;
+      deleteOf?: string;
     };
     if (parsed?._celesth === "attachment" && parsed.meta?.v === 1) {
       return { type: "attachment", meta: parsed.meta };
+    }
+    if (
+      parsed?._celesth === "delete" &&
+      parsed.v === 1 &&
+      typeof parsed.deleteOf === "string"
+    ) {
+      return { type: "delete", deleteOf: parsed.deleteOf };
     }
     if (
       parsed?._celesth === "edit" &&
@@ -49,6 +65,9 @@ export function parseMessageBody(plaintext: string): ParsedMessageBody {
 /** Sidebar / list preview line for a decrypted message body. */
 export function messagePreviewText(plaintext: string): string {
   const parsed = parseMessageBody(plaintext);
+  if (parsed.type === "delete") {
+    return DELETED_PREVIEW_TEXT;
+  }
   if (parsed.type === "edit") {
     const trimmed = parsed.text.trim();
     if (!trimmed) return "Encrypted message";

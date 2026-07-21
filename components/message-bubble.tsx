@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { AttachmentBubble } from "@/components/attachment-bubble";
 import {
   MessageActionSheet,
@@ -8,7 +8,7 @@ import {
 } from "@/components/message-actions";
 import { formatDayDivider, formatMessageTime } from "@/lib/chat";
 import type { AttachmentMeta } from "@/lib/fileCrypto";
-import { parseMessageBody } from "@/lib/messageContent";
+import { DELETED_MESSAGE_PLACEHOLDER, parseMessageBody } from "@/lib/messageContent";
 
 export type MessageBubbleProps = {
   id: string;
@@ -31,7 +31,10 @@ export type MessageBubbleProps = {
   decryptFailed?: boolean;
   attachmentCacheScope?: string;
   edited?: boolean;
+  deleted?: boolean;
   onEditRequest?: () => void;
+  onDeleteForEveryoneRequest?: () => void;
+  onDeleteForMeRequest?: () => void;
   onRetry?: (id: string) => void;
 };
 
@@ -52,7 +55,6 @@ function senderColorFromId(userId: string): string {
   return SENDER_COLOR_VARS[hash % SENDER_COLOR_VARS.length];
 }
 
-/** Signal-style: 18px all corners; 6px only on the last bubble's near-sender corner. */
 function bubbleRadiusClass(isMine: boolean, isLastInGroup: boolean): string {
   if (!isLastInGroup) return "rounded-[18px]";
   return isMine
@@ -126,19 +128,49 @@ export const MessageBubble = memo(function MessageBubble({
   decryptFailed,
   attachmentCacheScope,
   edited,
+  deleted,
   onEditRequest,
+  onDeleteForEveryoneRequest,
+  onDeleteForMeRequest,
   onRetry,
 }: MessageBubbleProps) {
   const [actionOpen, setActionOpen] = useState(false);
+  const hasContextMenu = Boolean(
+    onEditRequest || onDeleteForEveryoneRequest || onDeleteForMeRequest,
+  );
   const longPress = useMessageLongPress(() => {
-    if (onEditRequest) setActionOpen(true);
+    if (hasContextMenu) setActionOpen(true);
   });
+
+  const menuActions = useMemo(() => {
+    const actions: {
+      label: string;
+      onSelect: () => void;
+      destructive?: boolean;
+    }[] = [];
+    if (onEditRequest) {
+      actions.push({ label: "Edit", onSelect: onEditRequest });
+    }
+    if (onDeleteForEveryoneRequest) {
+      actions.push({
+        label: "Delete for Everyone",
+        onSelect: onDeleteForEveryoneRequest,
+        destructive: true,
+      });
+    }
+    if (onDeleteForMeRequest) {
+      actions.push({ label: "Delete for Me", onSelect: onDeleteForMeRequest });
+    }
+    return actions;
+  }, [onEditRequest, onDeleteForEveryoneRequest, onDeleteForMeRequest]);
+
   const radiusClass = bubbleRadiusClass(isMine, isLastInGroup);
   const groupGap = isFirstInGroup ? "10px" : "2px";
   const parsed = parseMessageBody(body);
   const isAttachment =
-    parsed.type === "attachment" ||
-    Boolean((localPreviewUrl || pendingAttachment) && !body);
+    !deleted &&
+    (parsed.type === "attachment" ||
+      Boolean((localPreviewUrl || pendingAttachment) && !body));
 
   const attachmentMeta: AttachmentMeta | null =
     parsed.type === "attachment"
@@ -205,9 +237,20 @@ export const MessageBubble = memo(function MessageBubble({
               {senderLabel}
             </span>
           ) : null}
-          {decryptFailed ? (
+          {deleted ? (
+            <div
+              className={`px-[14px] py-[10px] text-[15px] leading-[1.35] italic text-[var(--text-secondary)] ${radiusClass} bg-[var(--surface)]`}
+              {...(hasContextMenu ? longPress : {})}
+            >
+              {DELETED_MESSAGE_PLACEHOLDER}
+              {showTime ? (
+                <BubbleTimestamp timestamp={timestamp} isMine={isMine} />
+              ) : null}
+            </div>
+          ) : decryptFailed ? (
             <div
               className={`px-[14px] py-[10px] text-[15px] leading-[1.35] ${radiusClass} bg-[var(--surface)] text-[var(--text-secondary)]`}
+              {...(hasContextMenu ? longPress : {})}
             >
               Couldn&apos;t decrypt message
             </div>
@@ -221,6 +264,7 @@ export const MessageBubble = memo(function MessageBubble({
               style={
                 attachmentMeta.kind === "audio" ? undefined : { maxHeight: 320 }
               }
+              {...(hasContextMenu ? longPress : {})}
             >
               <AttachmentBubble
                 meta={attachmentMeta}
@@ -254,7 +298,7 @@ export const MessageBubble = memo(function MessageBubble({
               className={`px-[14px] py-[10px] text-[15px] leading-[1.35] break-words whitespace-pre-wrap ${radiusClass} ${bubbleClass} ${
                 isPending ? "opacity-70" : ""
               }`}
-              {...(onEditRequest ? longPress : {})}
+              {...(hasContextMenu ? longPress : {})}
             >
               {parsed.type === "text" ? parsed.text : body}
               {showTime ? (
@@ -277,9 +321,9 @@ export const MessageBubble = memo(function MessageBubble({
           ) : null}
         </div>
       </div>
-      {actionOpen && onEditRequest ? (
+      {actionOpen && menuActions.length > 0 ? (
         <MessageActionSheet
-          actions={[{ label: "Edit", onSelect: onEditRequest }]}
+          actions={menuActions}
           onClose={() => setActionOpen(false)}
         />
       ) : null}

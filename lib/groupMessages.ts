@@ -1,6 +1,10 @@
 import { decryptMessage } from "@/lib/crypto";
 import { applyAfterClear } from "@/lib/conversationClear";
-import { messagePreviewText } from "@/lib/messageContent";
+import {
+  DELETED_PREVIEW_TEXT,
+  messagePreviewText,
+} from "@/lib/messageContent";
+import { deleteMetaFromMessage } from "@/lib/messageEdits";
 import { cacheBody, getCachedBody } from "@/lib/message-decrypt";
 import { createClient } from "@/lib/supabase/client";
 
@@ -14,6 +18,7 @@ export type GroupMessageRow = {
   nonce: string;
   created_at: string;
   edit_of?: string | null;
+  delete_of?: string | null;
 };
 
 export type DecryptedGroupMessage = {
@@ -23,8 +28,11 @@ export type DecryptedGroupMessage = {
   body: string;
   createdAt: string;
   editOf?: string | null;
+  deleteOf?: string | null;
   edited?: boolean;
+  deleted?: boolean;
   editAppliedAt?: string;
+  deleteAppliedAt?: string;
   decryptFailed?: boolean;
 };
 
@@ -47,6 +55,7 @@ export async function decryptGroupMessageRow(
       body: cached,
       createdAt: row.created_at,
       editOf: row.edit_of ?? null,
+      deleteOf: row.delete_of ?? null,
       decryptFailed: cached === "[unable to decrypt]",
     };
   }
@@ -79,6 +88,7 @@ export async function decryptGroupMessageRow(
       body,
       createdAt: row.created_at,
       editOf: row.edit_of ?? null,
+      deleteOf: row.delete_of ?? null,
     };
   } catch {
     const body = "[unable to decrypt]";
@@ -90,6 +100,7 @@ export async function decryptGroupMessageRow(
       body,
       createdAt: row.created_at,
       editOf: row.edit_of ?? null,
+      deleteOf: row.delete_of ?? null,
       decryptFailed: true,
     };
   }
@@ -116,6 +127,9 @@ export async function decryptGroupMessageBatch(
   );
 }
 
+const GROUP_PREVIEW_SELECT =
+  "id, group_id, message_uuid, sender_id, recipient_id, ciphertext, nonce, created_at, edit_of, delete_of";
+
 export async function fetchGroupPreview(
   groupId: string,
   myUserId: string,
@@ -128,16 +142,16 @@ export async function fetchGroupPreview(
   lastSenderId: string | null;
   lastSenderUsername: string | null;
   lastMessageId: string;
+  deleted?: boolean;
 } | null> {
   const supabase = createClient();
   let baseQuery = supabase
     .from("group_messages")
-    .select(
-      "id, group_id, message_uuid, sender_id, recipient_id, ciphertext, nonce, created_at, edit_of",
-    )
+    .select(GROUP_PREVIEW_SELECT)
     .eq("group_id", groupId)
     .eq("recipient_id", myUserId)
-    .is("edit_of", null);
+    .is("edit_of", null)
+    .is("delete_of", null);
   baseQuery = applyAfterClear(baseQuery, clearedAt ?? undefined);
   const { data: base, error: baseError } = await baseQuery
     .order("created_at", { ascending: false })
@@ -149,11 +163,31 @@ export async function fetchGroupPreview(
   }
 
   const baseRow = base as GroupMessageRow;
+
+  const { data: latestDelete } = await supabase
+    .from("group_messages")
+    .select(GROUP_PREVIEW_SELECT)
+    .eq("group_id", groupId)
+    .eq("recipient_id", myUserId)
+    .eq("delete_of", baseRow.message_uuid)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (latestDelete) {
+    return {
+      lastActivity: baseRow.created_at,
+      lastPreview: DELETED_PREVIEW_TEXT,
+      lastSenderId: baseRow.sender_id,
+      lastSenderUsername: null,
+      lastMessageId: baseRow.message_uuid,
+      deleted: true,
+    };
+  }
+
   const { data: latestEdit } = await supabase
     .from("group_messages")
-    .select(
-      "id, group_id, message_uuid, sender_id, recipient_id, ciphertext, nonce, created_at, edit_of",
-    )
+    .select(GROUP_PREVIEW_SELECT)
     .eq("group_id", groupId)
     .eq("recipient_id", myUserId)
     .eq("edit_of", baseRow.message_uuid)
@@ -191,6 +225,9 @@ export async function previewFromGroupMessageRow(
   senderPublicKey: string | null | undefined,
   myPrivateKey: string,
 ): Promise<string> {
+  if (row.delete_of) {
+    return DELETED_PREVIEW_TEXT;
+  }
   const decrypted = await decryptGroupMessageRow(
     row,
     senderPublicKey,
@@ -198,6 +235,10 @@ export async function previewFromGroupMessageRow(
   );
   if (decrypted.decryptFailed) {
     return "Encrypted message";
+  }
+  const deleteMeta = deleteMetaFromMessage(decrypted.body, row.delete_of);
+  if (deleteMeta) {
+    return DELETED_PREVIEW_TEXT;
   }
   return messagePreviewText(decrypted.body);
 }

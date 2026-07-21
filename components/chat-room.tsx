@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronLeftIcon } from "@/components/icons";
 import { ContactDetail } from "@/components/contact-detail";
+import { DeleteForEveryoneDialog } from "@/components/delete-message-dialog";
 import { DeleteConversationDialog } from "@/components/delete-conversation-dialog";
 import { useKeyGate } from "@/components/key-gate";
 import { useNicknames } from "@/components/nicknames-context";
@@ -16,13 +17,21 @@ import { ImageTooLargeError, processImageForSend, processVideoForSend, VideoTooL
 import { buildAttachmentBody, parseMessageBody } from "@/lib/messageContent";
 import { stopVoicePlayback } from "@/lib/voicePlayer";
 import {
+  applyIncomingDelete,
   applyIncomingEdit,
+  buildDeleteEnvelopeBody,
   buildEditBody,
+  canDeleteForEveryone,
   canEditMessage,
+  deleteMetaFromMessage,
   editMetaFromMessage,
   integrateMessageBatch,
   mergeMessagesWithEdits,
+  purgeAttachmentsForBody,
+  removeMessageById,
+  type PendingMutations,
 } from "@/lib/messageEdits";
+import { fetchMessageHides, markMessageHidden } from "@/lib/messageHide";
 import { Avatar } from "@/lib/avatars";
 import {
   displayName,
@@ -72,8 +81,11 @@ type DisplayMessage = {
   body: string;
   createdAt: string;
   editOf?: string | null;
+  deleteOf?: string | null;
   edited?: boolean;
+  deleted?: boolean;
   editAppliedAt?: string;
+  deleteAppliedAt?: string;
   failed?: boolean;
   localPreviewUrl?: string;
   pendingAttachment?: Pick<
@@ -83,7 +95,12 @@ type DisplayMessage = {
 };
 
 const MESSAGE_SELECT =
-  "id, sender_id, ciphertext, nonce, created_at, edit_of";
+  "id, sender_id, ciphertext, nonce, created_at, edit_of, delete_of";
+
+const emptyPending = (): PendingMutations<DisplayMessage> => ({
+  pendingEdits: new Map(),
+  pendingDeletes: new Map(),
+});
 
 /** Render-layer grouping: same sender within 60 seconds. */
 function isSameRenderGroup(
@@ -164,7 +181,13 @@ export function ChatRoom() {
   const pendingByCipherRef = useRef<
     Map<
       string,
-      { tempId: string; body: string; isEdit?: boolean; targetId?: string }
+      {
+        tempId: string;
+        body: string;
+        isEdit?: boolean;
+        isDelete?: boolean;
+        targetId?: string;
+      }
     >
   >(new Map());
   const initialMessageIdsRef = useRef<Set<string> | null>(null);
@@ -177,9 +200,15 @@ export function ChatRoom() {
   const loadingOlderRef = useRef(false);
   const historyCursorRef = useRef<HistoryCursor | null>(null);
   const clearedAtRef = useRef<string | null>(null);
-  const pendingEditsRef = useRef<Map<string, DisplayMessage>>(new Map());
+  const pendingMutationsRef = useRef<PendingMutations<DisplayMessage>>(
+    emptyPending(),
+  );
+  const hiddenIdsRef = useRef<Set<string>>(new Set());
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editInitialText, setEditInitialText] = useState<string | null>(null);
+  const [deleteForEveryoneTarget, setDeleteForEveryoneTarget] =
+    useState<DisplayMessage | null>(null);
+  const [deletingForEveryone, setDeletingForEveryone] = useState(false);
   const pendingScrollAnchorRef = useRef<ScrollAnchor | null>(null);
   const conversationIdRef = useRef(conversationId);
 
@@ -200,9 +229,11 @@ export function ChatRoom() {
     pendingScrollAnchorRef.current = null;
     pendingFileRef.current.clear();
     pendingAudioRef.current.clear();
-    pendingEditsRef.current.clear();
+    pendingMutationsRef.current = emptyPending();
+    hiddenIdsRef.current.clear();
     setEditingMessageId(null);
     setEditInitialText(null);
+    setDeleteForEveryoneTarget(null);
   }, [conversationId]);
 
   useEffect(() => {
@@ -334,11 +365,15 @@ export function ChatRoom() {
       const integrated = integrateMessageBatch(
         messagesRef.current,
         fresh,
-        pendingEditsRef.current,
+        pendingMutationsRef.current,
         clearedAtRef.current,
+        hiddenIdsRef.current,
         true,
       );
-      pendingEditsRef.current = integrated.pendingEdits;
+      pendingMutationsRef.current = {
+        pendingEdits: integrated.pendingEdits,
+        pendingDeletes: integrated.pendingDeletes,
+      };
       setMessages(integrated.messages);
     } finally {
       loadingOlderRef.current = false;
@@ -459,6 +494,8 @@ export function ChatRoom() {
 
         const clearedAt = await fetchClearedAt("dm", conversationId);
         clearedAtRef.current = clearedAt;
+        const hiddenIds = await fetchMessageHides(conversationId);
+        hiddenIdsRef.current = hiddenIds;
 
         let messagesQuery = supabase
           .from("messages")
@@ -489,8 +526,12 @@ export function ChatRoom() {
         const merged = mergeMessagesWithEdits(
           decrypted,
           clearedAt,
+          hiddenIds,
         );
-        pendingEditsRef.current = merged.pendingEdits;
+        pendingMutationsRef.current = {
+          pendingEdits: merged.pendingEdits,
+          pendingDeletes: merged.pendingDeletes,
+        };
 
         if (cancelled) return;
 
@@ -542,6 +583,9 @@ export function ChatRoom() {
                     if (pending.isEdit && pending.targetId) {
                       return;
                     }
+                    if (pending.isDelete && pending.targetId) {
+                      return;
+                    }
                     setMessages((prev) =>
                       prev.map((m) =>
                         m.id === pending.tempId
@@ -562,6 +606,21 @@ export function ChatRoom() {
                 );
 
                 if (cancelled) return;
+
+                const scope = attachmentCacheScope("dm", conversationId);
+
+                if (row.delete_of || deleteMetaFromMessage(display.body, row.delete_of)) {
+                  setMessages((prev) => {
+                    const applied = applyIncomingDelete(
+                      prev,
+                      display,
+                      clearedAtRef.current,
+                      { purgeAttachments: true, cacheScope: scope },
+                    );
+                    return applied ?? prev;
+                  });
+                  return;
+                }
 
                 if (row.edit_of || editMetaFromMessage(display.body, row.edit_of)) {
                   setMessages((prev) => {
@@ -601,6 +660,120 @@ export function ChatRoom() {
       }
     };
   }, [conversationId, requireKeyImport]);
+
+  const sendDeleteForEveryone = useCallback(
+    (target: DisplayMessage) => {
+      const myId = myUserIdRef.current;
+      if (!myId) return;
+
+      const deleteOf = target.id;
+      const optimisticCreatedAt = new Date().toISOString();
+      const plaintext = buildDeleteEnvelopeBody(deleteOf);
+      const scope = attachmentCacheScope("dm", conversationId);
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === deleteOf
+            ? {
+                ...m,
+                deleted: true,
+                edited: false,
+                deleteAppliedAt: optimisticCreatedAt,
+                failed: false,
+              }
+            : m,
+        ),
+      );
+
+      purgeAttachmentsForBody(target.body, {
+        deleteFromStorage: true,
+        cacheScope: scope,
+      });
+
+      void (async () => {
+        setSending(true);
+        let cipherKey: string | null = null;
+        try {
+          const theirKey = theirPublicKeyRef.current;
+          const myKey = myPrivateKeyRef.current;
+          if (!myKey || !theirKey) throw new Error("Keys missing");
+
+          const { ciphertext, nonce } = await encryptMessage(
+            plaintext,
+            theirKey,
+            myKey,
+          );
+          cipherKey = `${ciphertext}|${nonce}`;
+          pendingByCipherRef.current.set(cipherKey, {
+            tempId: `delete:${deleteOf}`,
+            body: plaintext,
+            isDelete: true,
+            targetId: deleteOf,
+          });
+
+          const supabase = createClient();
+          const { data: inserted, error: insertError } = await supabase
+            .from("messages")
+            .insert({
+              conversation_id: conversationId,
+              sender_id: myId,
+              ciphertext,
+              nonce,
+              delete_of: deleteOf,
+            })
+            .select(MESSAGE_SELECT)
+            .single();
+
+          if (insertError || !inserted) {
+            throw new Error("Could not delete message");
+          }
+
+          pendingByCipherRef.current.delete(cipherKey);
+          seenIdsRef.current.add(inserted.id);
+        } catch {
+          if (cipherKey) pendingByCipherRef.current.delete(cipherKey);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === deleteOf
+                ? {
+                    ...m,
+                    deleted: false,
+                    deleteAppliedAt: undefined,
+                    failed: true,
+                  }
+                : m,
+            ),
+          );
+        } finally {
+          setSending(false);
+        }
+      })();
+    },
+    [conversationId],
+  );
+
+  const deleteForMe = useCallback(
+    async (messageId: string) => {
+      hiddenIdsRef.current.add(messageId);
+      setMessages((prev) => removeMessageById(prev, messageId));
+      const result = await markMessageHidden(messageId, conversationId);
+      if (!result.ok) {
+        hiddenIdsRef.current.delete(messageId);
+        void fetchMessageHides(conversationId).then((ids) => {
+          hiddenIdsRef.current = ids;
+        });
+      }
+    },
+    [conversationId],
+  );
+
+  const confirmDeleteForEveryone = useCallback(() => {
+    if (!deleteForEveryoneTarget) return;
+    setDeletingForEveryone(true);
+    sendDeleteForEveryone(deleteForEveryoneTarget);
+    setDeleteForEveryoneTarget(null);
+    setDeletingForEveryone(false);
+  }, [deleteForEveryoneTarget, sendDeleteForEveryone]);
 
   const sendPlaintext = useCallback(
     (
@@ -1308,15 +1481,28 @@ export function ChatRoom() {
                       }
                       failed={m.failed}
                       edited={m.edited}
+                      deleted={m.deleted}
                       localPreviewUrl={m.localPreviewUrl}
                       pendingAttachment={m.pendingAttachment}
                       attachmentCacheScope={attachmentScope}
                       onRetry={handleRetry}
                       onEditRequest={
                         mine &&
-                        canEditMessage(mine, m.body, m.createdAt) &&
+                        canEditMessage(mine, m.body, m.createdAt, m.deleted) &&
                         !editingMessageId
                           ? () => startEditMessage(m)
+                          : undefined
+                      }
+                      onDeleteForEveryoneRequest={
+                        mine &&
+                        canDeleteForEveryone(mine, m.createdAt, m.deleted) &&
+                        !editingMessageId
+                          ? () => setDeleteForEveryoneTarget(m)
+                          : undefined
+                      }
+                      onDeleteForMeRequest={
+                        !m.deleted && !editingMessageId
+                          ? () => void deleteForMe(m.id)
                           : undefined
                       }
                     />
@@ -1346,6 +1532,16 @@ export function ChatRoom() {
           username={otherUsername}
           avatarId={otherAvatarId}
           onClose={() => setContactDetailOpen(false)}
+        />
+      ) : null}
+
+      {deleteForEveryoneTarget ? (
+        <DeleteForEveryoneDialog
+          confirming={deletingForEveryone}
+          onConfirm={() => void confirmDeleteForEveryone()}
+          onCancel={() => {
+            if (!deletingForEveryone) setDeleteForEveryoneTarget(null);
+          }}
         />
       ) : null}
 
